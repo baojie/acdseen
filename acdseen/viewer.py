@@ -225,10 +225,8 @@ class Viewer(QWidget):
 
     def _cycle_delay(self, direction: int) -> None:
         delays = config.SLIDESHOW_DELAYS
-        try:
-            i = delays.index(self._slideshow_delay)
-        except ValueError:
-            i = 0
+        # 当前值可能不在档位表里（配置被改过），退到最接近的那一档
+        i = min(range(len(delays)), key=lambda j: abs(delays[j] - self._slideshow_delay))
         i = max(0, min(len(delays) - 1, i + direction))
         self._slideshow_delay = delays[i]
         if self._slideshow.isActive():
