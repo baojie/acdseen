@@ -1,23 +1,36 @@
-"""缩略图列表的模型与绘制。
+"""图片列表的模型与缩略图格子的绘制。
 
-模型只管"有哪些文件、缩略图到了没"，绘制只管"一格长什么样"，
-两边都不认识 Browser —— 换个宿主窗口照样能用。
+模型是多列的（名称 / 尺寸 / 大小 / 类型 / 修改日期），两个视图共用它：
+  * 缩略图模式  QListView 只显示第 0 列，走 ThumbDelegate 自己画格子
+  * 列表模式    QTreeView 显示全部列，表头、点击排序、拖列宽都是原生的
+
+两边不认识 Browser —— 换个宿主窗口照样能用。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QListView, QStyle, QStyledItemDelegate
 
 from . import config
-from .loader import ThumbnailLoader, image_dimensions
-from .util import format_mtime, format_size, human_dims
+from .loader import ThumbnailLoader
+from .util import format_mtime, format_size, human_dims, image_size
+
+# (标题, 点表头时用的排序键, 默认列宽)。列宽 None = 名称列，占掉剩下的空间。
+COLUMNS = (
+    ("名称",     config.SORT_NAME,   None),
+    ("尺寸",     config.SORT_PIXELS, 110),
+    ("大小",     config.SORT_SIZE,    90),
+    ("类型",     config.SORT_TYPE,    70),
+    ("修改日期", config.SORT_DATE,   140),
+)
+COL_NAME, COL_DIMS, COL_SIZE, COL_TYPE, COL_MTIME = range(len(COLUMNS))
 
 
-class ThumbModel(QAbstractListModel):
+class ThumbModel(QAbstractTableModel):
     """图片列表模型。缩略图按需异步加载 —— Qt 只为可见项调 data()，
     所以这里的 lazy request 天然只处理视口内的文件。"""
 
@@ -43,6 +56,7 @@ class ThumbModel(QAbstractListModel):
         return self._paths
 
     def path_at(self, index: QModelIndex) -> Path | None:
+        # 只看行号 —— 列表模式下点在哪一列都该拿到同一个文件
         if index.isValid() and 0 <= index.row() < len(self._paths):
             return self._paths[index.row()]
         return None
@@ -72,17 +86,28 @@ class ThumbModel(QAbstractListModel):
     def thumb_size(self) -> int:
         return self._edge
 
-    # -- QAbstractListModel --
+    # -- QAbstractTableModel --
     def rowCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._paths)
+
+    def columnCount(self, parent=QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(COLUMNS)
+
+    def headerData(self, section: int, orientation, role=Qt.DisplayRole):
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            if 0 <= section < len(COLUMNS):
+                return COLUMNS[section][0]
+        return None
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         path = self.path_at(index)
         if path is None:
             return None
+        col = index.column()
+
         if role == Qt.DisplayRole:
-            return path.name
-        if role == Qt.DecorationRole:
+            return self._cell(path, col)
+        if role == Qt.DecorationRole and col == COL_NAME:
             icon = self._thumbs.get(path)
             if icon is not None:
                 return icon
@@ -92,7 +117,27 @@ class ThumbModel(QAbstractListModel):
             return self._placeholder
         if role == Qt.ToolTipRole:
             return self._tooltip(path)
+        if role == Qt.TextAlignmentRole and col in (COL_DIMS, COL_SIZE):
+            return int(Qt.AlignRight | Qt.AlignVCenter)
         return None
+
+    def _cell(self, path: Path, col: int) -> str:
+        if col == COL_NAME:
+            return path.name
+        if col == COL_DIMS:
+            w, h = image_size(path)          # 带缓存，滚动不会反复读文件头
+            return f"{w}×{h}" if w and h else ""
+        if col == COL_TYPE:
+            return path.suffix.lstrip(".").upper()
+        try:
+            st = path.stat()
+        except OSError:
+            return ""
+        if col == COL_SIZE:
+            return format_size(st.st_size)
+        if col == COL_MTIME:
+            return format_mtime(st.st_mtime)
+        return ""
 
     def _tooltip(self, path: Path) -> str:
         parts = [path.name]
@@ -101,9 +146,9 @@ class ThumbModel(QAbstractListModel):
             parts.append(f"{format_size(st.st_size)}   {format_mtime(st.st_mtime)}")
         except OSError:
             pass
-        dims = image_dimensions(path)
-        if dims:
-            parts.append(human_dims(*dims))
+        w, h = image_size(path)
+        if w and h:
+            parts.append(human_dims(w, h))
         return "\n".join(parts)
 
     def _on_thumb(self, path: Path, img: QImage | None) -> None:
@@ -116,7 +161,7 @@ class ThumbModel(QAbstractListModel):
             self._thumbs[path] = self._make_broken(self._edge)
         else:
             self._thumbs[path] = QIcon(QPixmap.fromImage(img))
-        idx = self.index(row, 0)
+        idx = self.index(row, COL_NAME)
         self.dataChanged.emit(idx, idx, [Qt.DecorationRole])
 
     # -- 占位图 --

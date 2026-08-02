@@ -480,3 +480,214 @@ def test_看图时预览暂停_退出后恢复(qapp, browser):
     assert not pv._paused
     assert pv._path == browser._current_path(), "退出看图后预览应回到选中项"
     assert pump(qapp, 8000, lambda: pv._img is not None or pv._error), "退出后应恢复解码"
+
+
+# ------------------------------------------------------------------ 视图模式
+def test_默认是缩略图模式(browser):
+    from PySide6.QtWidgets import QListView
+    from acdseen.thumbmodel import ThumbDelegate
+    assert browser._view_mode == config.VIEW_THUMBS
+    assert browser._view is browser._icon_view
+    assert browser._view.viewMode() == QListView.IconMode
+    assert isinstance(browser._view.itemDelegate(), ThumbDelegate)
+
+
+def test_切到列表模式(qapp, browser):
+    from PySide6.QtWidgets import QTreeView
+    browser._toggle_view_mode()
+    pump(qapp, 500)
+    assert browser._view_mode == config.VIEW_LIST
+    assert isinstance(browser._view, QTreeView)
+    assert browser._view is browser._list_view
+    assert browser._model.thumb_size() == config.LIST_THUMB_SIZE
+    browser._view.repaint()          # 列表模式必须画得出来
+
+
+def test_切视图不丢选中项(qapp, browser):
+    browser._view.setCurrentIndex(browser._model.index(2, 0))
+    keep = browser._current_path()
+    browser._toggle_view_mode()
+    pump(qapp, 500)
+    assert browser._current_path() == keep, "set_thumb_size 会重置模型，选中项要找回来"
+    browser._toggle_view_mode()
+    pump(qapp, 500)
+    assert browser._current_path() == keep
+
+
+def test_列表模式不覆盖缩略图边长(qapp, browser):
+    """回归：列表模式把模型尺寸压到 40，那个值不能被当成用户选的缩略图大小存起来。"""
+    browser._thumb_edge = 160
+    browser._set_view_mode(config.VIEW_THUMBS)
+    browser._model.set_thumb_size(160)
+    browser._toggle_view_mode()      # → 列表
+    pump(qapp, 300)
+    assert browser._model.thumb_size() == config.LIST_THUMB_SIZE
+    assert browser._thumb_edge == 160, "用户选的缩略图边长被列表模式吃掉了"
+    browser._toggle_view_mode()      # → 缩略图
+    pump(qapp, 300)
+    assert browser._model.thumb_size() == 160, "切回来要恢复用户选的边长"
+
+
+def test_列表模式下调缩略图大小会切回网格(qapp, browser):
+    browser._set_view_mode(config.VIEW_LIST)
+    pump(qapp, 300)
+    browser._step_thumb(+1)
+    assert browser._view_mode == config.VIEW_THUMBS
+
+
+def test_列表各列都有内容(browser):
+    from PySide6.QtCore import Qt
+    from acdseen.thumbmodel import (COL_DIMS, COL_MTIME, COL_NAME, COL_SIZE,
+                                    COL_TYPE, COLUMNS)
+    row = browser._model.index_of(
+        next(p for p in browser._model.paths() if p.name != "broken.jpg"))
+    cell = lambda c: browser._model.data(browser._model.index(row, c), Qt.DisplayRole)
+    assert browser._model.columnCount() == len(COLUMNS)
+    assert cell(COL_NAME)
+    assert "×" in cell(COL_DIMS)
+    assert cell(COL_SIZE)
+    assert cell(COL_TYPE)
+    assert cell(COL_MTIME)
+
+
+def test_表头有标题(browser):
+    from PySide6.QtCore import Qt
+    from acdseen.thumbmodel import COLUMNS
+    titles = [browser._model.headerData(i, Qt.Horizontal)
+              for i in range(browser._model.columnCount())]
+    assert titles == [t for t, _k, _w in COLUMNS]
+    hdr = browser._list_view.header()
+    assert hdr.sectionsClickable(), "表头必须能点"
+
+
+def test_视图模式持久化(qapp, workdir):
+    b = Browser(workdir)
+    b.show(); pump(qapp, 1500)
+    b._set_view_mode(config.VIEW_LIST)
+    b.close(); pump(qapp, 300)
+
+    b2 = Browser(workdir)
+    b2.show(); pump(qapp, 1500)
+    assert b2._view_mode == config.VIEW_LIST, "视图模式没存进 QSettings"
+    b2.close(); pump(qapp, 300)
+
+
+# ------------------------------------------------------------------ 排序
+def test_排序菜单覆盖全部排序键(browser):
+    assert {k for _, k in browser._sort_acts} == set(config.SORT_NAMES)
+
+
+def test_切排序会重排列表(qapp, browser):
+    browser._set_sort(config.SORT_SIZE)
+    pump(qapp, 500)
+    sizes = [p.stat().st_size for p in browser._model.paths()]
+    assert sizes == sorted(sizes)
+    browser._set_sort(config.SORT_NAME)
+    pump(qapp, 500)
+    names = [p.name for p in browser._model.paths()]
+    assert names == [p.name for p in list_images(browser._dir, config.SORT_NAME)]
+
+
+def test_随机排序刷新时不重洗(qapp, browser):
+    """删一张图会触发 refresh()，那时整个网格不该重排。"""
+    browser._set_sort(config.SORT_RANDOM)
+    pump(qapp, 500)
+    before = list(browser._model.paths())
+    browser.refresh()
+    pump(qapp, 500)
+    assert browser._model.paths() == before, "seed 没稳住，refresh 把顺序洗掉了"
+
+
+def test_再点随机会重新洗牌(qapp, browser):
+    browser._set_sort(config.SORT_RANDOM)
+    pump(qapp, 300)
+    first, seed = list(browser._model.paths()), browser._sort_seed
+    browser._set_sort(config.SORT_RANDOM)
+    pump(qapp, 300)
+    assert browser._sort_seed != seed, "再点一次「随机」应该换一副新牌"
+    assert sorted(browser._model.paths()) == sorted(first), "一张都不能丢"
+
+
+# ------------------------------------------------------------------ 表头排序
+def test_点表头按该列排序(qapp, browser):
+    from acdseen.thumbmodel import COL_SIZE
+    browser._set_view_mode(config.VIEW_LIST)
+    pump(qapp, 300)
+    browser._on_header_clicked(COL_SIZE)
+    pump(qapp, 500)
+    assert browser._sort_key == config.SORT_SIZE
+    sizes = [p.stat().st_size for p in browser._model.paths()]
+    assert sizes == sorted(sizes)
+
+
+def test_再点同一列翻转正倒序(qapp, browser):
+    from acdseen.thumbmodel import COL_SIZE
+    browser._set_view_mode(config.VIEW_LIST)
+    pump(qapp, 300)
+    browser._on_header_clicked(COL_SIZE)
+    pump(qapp, 400)
+    up = list(browser._model.paths())
+    assert not browser._sort_reverse
+    browser._on_header_clicked(COL_SIZE)
+    pump(qapp, 400)
+    assert browser._sort_reverse
+    assert browser._model.paths() == list(reversed(up))
+
+
+def test_点别的列回到正序(qapp, browser):
+    from acdseen.thumbmodel import COL_NAME, COL_SIZE
+    browser._set_view_mode(config.VIEW_LIST)
+    pump(qapp, 300)
+    browser._on_header_clicked(COL_SIZE)
+    browser._on_header_clicked(COL_SIZE)      # 变倒序
+    pump(qapp, 400)
+    assert browser._sort_reverse
+    browser._on_header_clicked(COL_NAME)      # 换一列
+    pump(qapp, 400)
+    assert browser._sort_key == config.SORT_NAME
+    assert not browser._sort_reverse, "换列时该回到正序"
+    assert browser._sort_rev_act.isChecked() is False, "菜单的「倒序」也要跟上"
+
+
+def test_表头箭头跟随菜单排序(qapp, browser):
+    from PySide6.QtCore import Qt
+    from acdseen.thumbmodel import COL_SIZE
+    hdr = browser._list_view.header()
+    browser._set_sort(config.SORT_SIZE)
+    pump(qapp, 300)
+    assert hdr.isSortIndicatorShown()
+    assert hdr.sortIndicatorSection() == COL_SIZE
+    assert hdr.sortIndicatorOrder() == Qt.AscendingOrder
+    browser._sort_rev_act.setChecked(True)
+    browser._toggle_sort_order()
+    pump(qapp, 300)
+    assert hdr.sortIndicatorOrder() == Qt.DescendingOrder
+
+
+def test_随机排序时收起箭头(qapp, browser):
+    """随机不对应任何一列，硬指一个会误导。"""
+    hdr = browser._list_view.header()
+    browser._set_sort(config.SORT_RANDOM)
+    pump(qapp, 300)
+    assert not hdr.isSortIndicatorShown()
+
+
+def test_列表模式多选不重复计数(qapp, browser):
+    """QTreeView 一行有 5 个 index，去重没做的话一个文件会被数 5 遍。"""
+    browser._set_view_mode(config.VIEW_LIST)
+    pump(qapp, 300)
+    browser._view.selectAll()
+    pump(qapp, 300)
+    n = browser._model.rowCount()
+    assert len(browser._view.selectedIndexes()) == n * 5
+    assert len(browser._selected_paths()) == n
+    assert f"已选 {n}" in browser._status_left.text()
+
+
+def test_两个视图共享选中项(qapp, browser):
+    browser._view.setCurrentIndex(browser._model.index(2, 0))
+    keep = browser._current_path()
+    assert browser._icon_view.selectionModel() is browser._list_view.selectionModel()
+    browser._set_view_mode(config.VIEW_LIST)
+    pump(qapp, 300)
+    assert browser._current_path() == keep

@@ -62,10 +62,25 @@ SLIDESHOW_ASAP_MS = 30
 
 
 # ---------------------------------------------------------------- 排序
-SORT_NAME, SORT_SIZE, SORT_TYPE, SORT_DATE = range(4)
+# 数值会写进 QSettings，只能往后追加，不能重排 —— 否则老配置读出来是别的排序。
+(SORT_NAME, SORT_SIZE, SORT_TYPE, SORT_DATE,
+ SORT_PIXELS, SORT_WIDTH, SORT_HEIGHT, SORT_RANDOM) = range(8)
 SORT_NAMES = {
     SORT_NAME: "名称",
-    SORT_SIZE: "大小",
+    SORT_SIZE: "文件大小",
     SORT_TYPE: "类型",
     SORT_DATE: "修改日期",
+    SORT_PIXELS: "像素总数",
+    SORT_WIDTH: "宽度",
+    SORT_HEIGHT: "高度",
+    SORT_RANDOM: "随机",
 }
+# 这几种要读每个文件的图片头才能排 —— 比 stat() 贵，菜单上标出来
+SORT_NEEDS_DIMS = {SORT_PIXELS, SORT_WIDTH, SORT_HEIGHT}
+
+
+# ---------------------------------------------------------------- 浏览视图
+VIEW_THUMBS, VIEW_LIST = range(2)
+VIEW_NAMES = {VIEW_THUMBS: "缩略图", VIEW_LIST: "列表"}
+# 列表模式每行左边那个小缩略图的边长
+LIST_THUMB_SIZE = 40
