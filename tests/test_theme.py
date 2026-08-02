@@ -109,3 +109,60 @@ def test_菜单开关能来回切(qapp, workdir):
     assert qapp.styleSheet() == ""
     b.close(); pump(qapp, 300)
     theme.apply(qapp, False)
+
+
+# ------------------------------------------------------------------ 图标
+def test_像素网格都是16x16(qapp):
+    for name, grid in (("closed", theme.FOLDER_CLOSED),
+                       ("open", theme.FOLDER_OPEN),
+                       ("drive", theme.DRIVE)):
+        assert len(grid) == 16, f"{name} 行数不是 16"
+        bad = [i for i, row in enumerate(grid) if len(row) != 16]
+        assert not bad, f"{name} 第 {bad} 行宽度不是 16"
+        unknown = {ch for row in grid for ch in row} - set(theme._ICON_COLORS) - {"."}
+        assert not unknown, f"{name} 里有没定义的颜色字符：{unknown}"
+
+
+def test_文件夹图标是黄的(qapp):
+    pm = theme.folder_pixmap(16, False)
+    img = pm.toImage()
+    yellow = sum(1 for y in range(16) for x in range(16)
+                 if img.pixelColor(x, y).name() == theme.ICON_FACE)
+    assert yellow > 60, f"黄色像素只有 {yellow} 个，图标八成画错了"
+    assert img.pixelColor(0, 0).alpha() == 0, "四角必须透明"
+
+
+def test_打开与闭合的文件夹不一样(qapp):
+    a = theme.folder_pixmap(16, False).toImage()
+    b = theme.folder_pixmap(16, True).toImage()
+    assert a != b, "展开状态得看得出区别，否则这个图标白做了"
+
+
+def test_图标放大不糊(qapp):
+    """像素画只能最近邻放大，平滑一次就不是 Win95 了。"""
+    pm = theme.folder_pixmap(32, False)
+    assert pm.size().width() == 32
+    colors = {pm.toImage().pixelColor(x, y).name()
+              for x in range(32) for y in range(32)
+              if pm.toImage().pixelColor(x, y).alpha() > 0}
+    allowed = set(theme._ICON_COLORS.values())
+    assert colors <= allowed, f"放大后冒出了中间色，说明被平滑了：{colors - allowed}"
+
+
+def test_目录树用上了win95图标(win95, workdir):
+    from PySide6.QtWidgets import QFileIconProvider
+    b = Browser(workdir)
+    b.show(); pump(win95, 1500)
+    b._toggle_win95(True)
+    assert isinstance(b._fs.iconProvider(), theme.Win95IconProvider)
+    b._toggle_win95(False)
+    assert not isinstance(b._fs.iconProvider(), theme.Win95IconProvider)
+    b.close(); pump(win95, 300)
+
+
+def test_图标提供器有缓存(qapp):
+    """icon(QFileInfo) 每一行都会调一次，不缓存就是每帧重画几十个图标。"""
+    prov = theme.Win95IconProvider()
+    a = prov._icon("folder")
+    b = prov._icon("folder")
+    assert a is b

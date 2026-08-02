@@ -56,6 +56,11 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._build_ui()
         self._build_menu()
         self._restore_state()
+        # 图标提供器必须无条件设一次：外观开关有默认值，光靠"设置里存过才应用"
+        # 的话，首次启动会是主题开着、但目录树图标没换的半吊子状态。
+        # 这里只碰自己的 QFileSystemModel，不去动全局样式 —— 那是入口和
+        # 用户手动切换该干的事，构造窗口时顺手改 app 级样式副作用太大。
+        self._sync_icon_provider()
         self.set_directory(start_dir)
 
     # ------------------------------------------------------------- UI
@@ -182,6 +187,17 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
     def _on_selection_changed(self, *_) -> None:
         self._preview.show_path(self._current_path())
 
+    def _sync_icon_provider(self) -> None:
+        """目录树的图标来自 QFileSystemModel 的 provider，换掉它整棵树就变黄。
+
+        自己留一份引用 —— setIconProvider 不接管所有权，被 GC 掉就是一片空白。
+        """
+        from PySide6.QtWidgets import QFileIconProvider
+        from . import theme
+        on = self._win95_act.isChecked()
+        self._icon_provider = theme.Win95IconProvider() if on else QFileIconProvider()
+        self._fs.setIconProvider(self._icon_provider)
+
     def _toggle_win95(self, checked: bool | None = None) -> None:
         """切 Win95 外观。样式是 app 级的，所以直接作用在 QApplication 上。"""
         from PySide6.QtWidgets import QApplication
@@ -191,6 +207,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         app = QApplication.instance()
         if app is not None:
             theme.apply(app, on)
+        self._sync_icon_provider()
 
     def _clear_cache(self) -> None:
         self._loader.clear_disk_cache()
@@ -262,8 +279,6 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             self._left_splitter.setSizes([int(x) for x in left_sizes])
         # 注意：PySide6 里 value(key, type=bool) 在键缺失时返回 False 而非 None，
         # 不能用 `is not None` 判断，必须查键是否存在。
-        if s.contains("win95_look"):
-            self._toggle_win95(bool(s.value("win95_look", type=bool)))
         if s.contains("preview_visible"):
             visible = bool(s.value("preview_visible"))
             self._preview_act.setChecked(visible)
@@ -280,6 +295,8 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         key = s.value("sort_key", type=int)
         if key in config.SORT_NAMES:
             self._sort_key = key
+        self._win95_act.setChecked(
+            s.value("win95_look", config.DEFAULT_WIN95_LOOK, type=bool))
         self._sort_reverse = bool(s.value("sort_reverse", False, type=bool))
         self._sort_rev_act.setChecked(self._sort_reverse)
         for act, k in self._sort_acts:

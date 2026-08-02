@@ -16,8 +16,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QFont, QPalette, QPen
-from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle, QStyleFactory
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPen, QPixmap
+from PySide6.QtWidgets import (QApplication, QFileIconProvider, QProxyStyle,
+                               QStyle, QStyleFactory)
 
 # Win95 的那套系统色，一个都不能调
 FACE = "#c0c0c0"        # 3D 控件表面
@@ -304,6 +305,150 @@ class Win95Style(QProxyStyle):
         painter.setBrush(QColor(TEXT if enabled else GRAYTEXT))
         painter.drawPolygon(pts)
         painter.restore()
+
+
+# ---------------------------------------------------------------- 图标
+# Win95 图标的全部用色就这几个：黑描边、亮黄面、橄榄色阴影、白高光。
+ICON_OUTLINE = "#000000"
+ICON_FACE = "#ffff00"
+ICON_SHADE = "#808000"
+ICON_HILITE = "#ffffff"
+ICON_GRAY = "#c0c0c0"
+ICON_DKGRAY = "#808080"
+
+
+# 图标是逐像素定义的，不是画出来的。16×16 这么小的画布上，多边形的斜边
+# 只有两三像素，斜面根本读不出来，反而会糊成一坨黑；当年的美工也是一格一格
+# 点的。字符含义：k 黑描边 / w 白高光 / y 亮黄 / o 橄榄阴影 /
+#              g 灰 / d 深灰 / l 绿色指示灯 / . 透明
+_ICON_COLORS = {
+    "k": ICON_OUTLINE, "w": ICON_HILITE, "y": ICON_FACE, "o": ICON_SHADE,
+    "g": ICON_GRAY, "d": ICON_DKGRAY, "l": "#00c000",
+}
+
+FOLDER_CLOSED = (
+    "................",
+    "................",
+    ".kkkkk..........",
+    ".kwwwwk.........",
+    ".kwyyyykkkkkkk..",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyok.",
+    ".kooooooooooook.",
+    ".kkkkkkkkkkkkkk.",
+    "................",
+    "................",
+)
+
+# 打开：后片照旧立着，前片整体向左下错开一格一格地落下来，
+# 于是右上角探出、左下角伸出，那道斜面就是"打开"的全部视觉信息。
+FOLDER_OPEN = (
+    "................",
+    "................",
+    ".kkkkk..........",
+    ".kwwwwk.........",
+    ".kwyyyykkkkkkk..",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyyk.",
+    "..kkkkkkkkkkkkkk",
+    "..kyyyyyyyyyyyk.",
+    ".kyyyyyyyyyyyk..",
+    ".kyyyyyyyyyyk...",
+    "kyyyyyyyyyyk....",
+    "kkkkkkkkkkk.....",
+    "................",
+    "................",
+)
+
+DRIVE = (
+    "................",
+    "................",
+    "................",
+    "................",
+    ".kkkkkkkkkkkkkk.",
+    ".kwwwwwwwwwwwwk.",
+    ".kgggggggggggdk.",
+    ".kgddddddggggdk.",     # 前面板的插槽，不然灰底上一片灰看着是空的
+    ".kgggggggggggdk.",
+    ".kglgggggggggdk.",
+    ".kddddddddddddk.",
+    ".kkkkkkkkkkkkkk.",
+    "................",
+    "................",
+    "................",
+    "................",
+)
+
+
+def _from_grid(grid: tuple[str, ...], size: int = 16) -> QPixmap:
+    """按 1:1 点出 16×16，再整数倍最近邻放大 —— 缩放绝不能平滑，一糊就废。"""
+    base = QPixmap(16, 16)
+    base.fill(Qt.transparent)
+    p = QPainter(base)
+    for y, row in enumerate(grid):
+        for x, ch in enumerate(row):
+            color = _ICON_COLORS.get(ch)
+            if color:
+                p.fillRect(x, y, 1, 1, QColor(color))
+    p.end()
+    if size == 16:
+        return base
+    return base.scaled(size, size, Qt.KeepAspectRatio, Qt.FastTransformation)
+
+
+def folder_pixmap(size: int = 16, is_open: bool = False) -> QPixmap:
+    """Win95 的黄文件夹。"""
+    return _from_grid(FOLDER_OPEN if is_open else FOLDER_CLOSED, size)
+
+
+def drive_pixmap(size: int = 16) -> QPixmap:
+    """灰盒子加一颗绿灯，Win95 的驱动器图标。"""
+    return _from_grid(DRIVE, size)
+
+
+class Win95IconProvider(QFileIconProvider):
+    """把目录树的系统图标换成手画的 Win95 图标。
+
+    QFileSystemModel 会拿这里的图标，所以只要换掉 provider，整棵树就变了。
+    图标按尺寸缓存 —— icon(QFileInfo) 每一行都会调一次。
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._cache: dict[tuple[str, int], QIcon] = {}
+
+    def _icon(self, kind: str, size: int = 16) -> QIcon:
+        key = (kind, size)
+        hit = self._cache.get(key)
+        if hit is None:
+            maker = {"folder": lambda: folder_pixmap(size, False),
+                     "open": lambda: folder_pixmap(size, True),
+                     "drive": lambda: drive_pixmap(size)}[kind]
+            pm = maker()
+            hit = QIcon(pm)
+            # 选中 / 禁用状态都用同一张，别让 Qt 自作主张把它变灰
+            hit.addPixmap(pm, QIcon.Selected)
+            hit.addPixmap(pm, QIcon.Disabled)
+            self._cache[key] = hit
+        return hit
+
+    def icon(self, arg):
+        if isinstance(arg, QFileIconProvider.IconType):
+            if arg in (QFileIconProvider.Drive, QFileIconProvider.Computer):
+                return self._icon("drive")
+            if arg == QFileIconProvider.Folder:
+                return self._icon("folder")
+            return super().icon(arg)
+        # QFileInfo 重载
+        if arg.isDir():
+            return self._icon("folder")
+        return super().icon(arg)
 
 
 def ui_font() -> QFont:
