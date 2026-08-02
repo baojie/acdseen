@@ -137,13 +137,26 @@ Python 导入 + QApplication : 199 ms
 acdseen/
 ├── __main__.py    入口
 ├── main.py        启动逻辑（目录 / 单张图 / 记住上次目录）
-├── browser.py     浏览器：目录树 + 缩略图 + 文件操作
+│
+├── browser.py     浏览器窗口主体：UI 组装、菜单、目录切换、状态栏、设置持久化
+├── thumbmodel.py  ├─ 缩略图列表的模型与绘制
+├── fileops.py     ├─ 文件操作：重命名 / 删除 / 复制 / 剪切 / 粘贴 / 复制到 / 移动到
+├── viewhost.py    ├─ 浏览 ↔ 看图 的页面切换
+├── helptext.py    └─ F1 的快捷键表
 ├── preview.py     预览窗格：选中图片的大图预览，单线程解码 + 防抖重载
-├── viewer.py      全屏看图器：导航、缩放、幻灯片、OSD
+│
+├── viewer.py      全屏看图器主体：导航、加载回调、缩放、键鼠事件
+├── slideshow.py   ├─ 幻灯片间隔与乱序播放
+├── render.py      └─ paintEvent 与 OSD 叠层
+│
 ├── loader.py      解码层：缩略图线程池、两段式加载、预读、LRU
 ├── config.py      集中放的"手感"参数（缩放步进、缓存大小、预读张数…）
 └── util.py        格式化、自然排序等小工具
 ```
+
+`fileops` / `viewhost` / `slideshow` / `render` 是 mixin，不是独立类 —— 它们要读当前
+选中项、要刷新列表、要往状态栏写消息，和宿主的耦合是真实存在的，硬拆成"传一堆回调
+进去"只会更绕。每个文件的 docstring 都写明了它依赖宿主提供哪些属性和方法。
 
 ## 开发
 

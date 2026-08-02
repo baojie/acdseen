@@ -29,6 +29,10 @@
 
 ### 变更
 
+- **按功能拆分超过 500 行的模块**，行为不变，132 条测试一条没改：
+  - `browser.py` 829 → 408 行，分出 `thumbmodel.py` / `fileops.py` / `viewhost.py` / `helptext.py`
+  - `viewer.py` 593 → 413 行，分出 `slideshow.py` / `render.py`
+  - 用 mixin 而非独立类：属性路径不变，与宿主的真实耦合也不用伪装成回调
 - **看图器不再另开窗**：改成主窗口 `QStackedWidget` 的一页，屏幕上仍然只剩那张图
   - `Viewer` 不再决定自己的去留，改发 `exit_view` 信号；独立启动（`acdseen photo.jpg`）行为不变
   - 进入看图时禁用浏览器的 `Del` / `Enter` / `F5` 等快捷键，否则会抢在看图器的按键处理之前触发

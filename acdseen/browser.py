@@ -4,219 +4,38 @@
   * 只看一个目录，不递归、不建数据库、不扫全盘
   * 文件操作（删/改名/复制/移动）直接内建，不用切回文件管理器
   * 全键盘可达
+
+这个文件只留窗口主体：UI 组装、菜单、目录切换、状态栏、设置持久化。
+其余按功能分了出去：
+  thumbmodel.py  缩略图列表的模型与绘制
+  fileops.py     文件操作（重命名 / 删除 / 复制 / 剪切 / 粘贴 / 复制到 / 移动到）
+  viewhost.py    浏览 ↔ 看图 的页面切换
+  helptext.py    F1 的快捷键表
 """
 
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import (QAbstractListModel, QDir, QEvent, QModelIndex,
-                            QRect, QSettings, QSize, Qt, QTimer, Signal)
-from PySide6.QtGui import (QAction, QActionGroup, QColor, QIcon, QImage,
-                           QKeySequence, QPainter, QPixmap)
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileSystemModel,
-                               QInputDialog, QLabel, QLineEdit, QListView,
-                               QMainWindow, QMenu, QMessageBox, QSplitter,
-                               QStackedWidget, QStatusBar, QStyle,
-                               QStyledItemDelegate, QTreeView, QWidget)
+from PySide6.QtCore import (QDir, QEvent, QModelIndex, QSettings, QSize, Qt)
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtWidgets import (QAbstractItemView, QFileSystemModel, QLabel,
+                               QListView, QMainWindow, QMenu, QMessageBox,
+                               QSplitter, QStackedWidget, QStatusBar, QTreeView)
 
 from . import config
+from .fileops import FileOpsMixin
+from .helptext import HELP_TEXT
 from .loader import ThumbnailLoader, image_dimensions
 from .preview import PreviewPane
+from .thumbmodel import ThumbDelegate, ThumbModel
 from .util import format_mtime, format_size, human_dims, list_images
 from .viewer import Viewer
+from .viewhost import ViewHostMixin
 
 
-class ThumbModel(QAbstractListModel):
-    """图片列表模型。缩略图按需异步加载 —— Qt 只为可见项调 data()，
-    所以这里的 lazy request 天然只处理视口内的文件。"""
-
-    def __init__(self, loader: ThumbnailLoader, parent=None):
-        super().__init__(parent)
-        self._paths: list[Path] = []
-        self._thumbs: dict[Path, QIcon] = {}
-        self._requested: set[Path] = set()
-        self._edge = config.DEFAULT_THUMB_SIZE
-        self._loader = loader
-        self._loader.ready.connect(self._on_thumb)
-        self._placeholder = self._make_placeholder(self._edge)
-
-    # -- 数据 --
-    def set_paths(self, paths: list[Path]) -> None:
-        self.beginResetModel()
-        self._paths = paths
-        self._thumbs.clear()
-        self._requested.clear()
-        self.endResetModel()
-
-    def paths(self) -> list[Path]:
-        return self._paths
-
-    def path_at(self, index: QModelIndex) -> Path | None:
-        if index.isValid() and 0 <= index.row() < len(self._paths):
-            return self._paths[index.row()]
-        return None
-
-    def index_of(self, path: Path) -> int:
-        try:
-            return self._paths.index(path)
-        except ValueError:
-            return -1
-
-    def remove_paths(self, paths: set[Path]) -> None:
-        keep = [p for p in self._paths if p not in paths]
-        if len(keep) != len(self._paths):
-            self.set_paths(keep)
-
-    def set_thumb_size(self, edge: int) -> None:
-        if edge == self._edge:
-            return
-        self._edge = edge
-        self._placeholder = self._make_placeholder(edge)
-        self._thumbs.clear()
-        self._requested.clear()
-        self._loader.invalidate()
-        self.beginResetModel()
-        self.endResetModel()
-
-    def thumb_size(self) -> int:
-        return self._edge
-
-    # -- QAbstractListModel --
-    def rowCount(self, parent=QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._paths)
-
-    def data(self, index: QModelIndex, role=Qt.DisplayRole):
-        path = self.path_at(index)
-        if path is None:
-            return None
-        if role == Qt.DisplayRole:
-            return path.name
-        if role == Qt.DecorationRole:
-            icon = self._thumbs.get(path)
-            if icon is not None:
-                return icon
-            if path not in self._requested:
-                self._requested.add(path)
-                self._loader.request(path, self._edge)
-            return self._placeholder
-        if role == Qt.ToolTipRole:
-            return self._tooltip(path)
-        return None
-
-    def _tooltip(self, path: Path) -> str:
-        parts = [path.name]
-        try:
-            st = path.stat()
-            parts.append(f"{format_size(st.st_size)}   {format_mtime(st.st_mtime)}")
-        except OSError:
-            pass
-        dims = image_dimensions(path)
-        if dims:
-            parts.append(human_dims(*dims))
-        return "\n".join(parts)
-
-    def _on_thumb(self, path: Path, img: QImage | None) -> None:
-        if path not in self._requested:
-            return
-        row = self.index_of(path)
-        if row < 0:
-            return
-        if img is None:
-            self._thumbs[path] = self._make_broken(self._edge)
-        else:
-            self._thumbs[path] = QIcon(QPixmap.fromImage(img))
-        idx = self.index(row, 0)
-        self.dataChanged.emit(idx, idx, [Qt.DecorationRole])
-
-    # -- 占位图 --
-    @staticmethod
-    def _make_placeholder(edge: int) -> QIcon:
-        pm = QPixmap(edge, edge)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setPen(QColor(120, 120, 128, 110))
-        p.setBrush(QColor(150, 150, 158, 28))
-        m = edge // 6
-        p.drawRect(m, m, edge - 2 * m, edge - 2 * m)
-        p.end()
-        return QIcon(pm)
-
-    @staticmethod
-    def _make_broken(edge: int) -> QIcon:
-        pm = QPixmap(edge, edge)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setPen(QColor(190, 90, 90, 170))
-        m = edge // 5
-        p.drawRect(m, m, edge - 2 * m, edge - 2 * m)
-        p.drawLine(m, m, edge - m, edge - m)
-        p.drawLine(edge - m, m, m, edge - m)
-        p.end()
-        return QIcon(pm)
-
-
-class ThumbDelegate(QStyledItemDelegate):
-    """自己画格子：图在上半区垂直居中，文件名固定贴底，选中高亮框住整格。
-
-    交给 Qt 默认画的话，不同宽高比的缩略图会让文件名基线参差不齐，
-    选中框也只圈住文字 —— 一眼就是"没做完"的样子。
-    """
-
-    def __init__(self, view: QListView, parent=None):
-        super().__init__(parent)
-        self._view = view
-
-    def paint(self, painter: QPainter, option, index: QModelIndex) -> None:
-        painter.save()
-        rect = option.rect
-        selected = bool(option.state & QStyle.State_Selected)
-        pal = option.palette
-
-        if selected:
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(pal.highlight())
-            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 4, 4)
-
-        fm = painter.fontMetrics()
-        text_h = fm.height() * config.THUMB_LABEL_LINES
-        pad = 5
-        icon_area = QRect(rect.left() + pad, rect.top() + pad,
-                          rect.width() - 2 * pad,
-                          rect.height() - text_h - 3 * pad)
-
-        icon = index.data(Qt.DecorationRole)
-        if isinstance(icon, QIcon):
-            pm = icon.pixmap(icon_area.size())
-            if not pm.isNull():
-                x = icon_area.left() + (icon_area.width() - pm.width()) // 2
-                y = icon_area.top() + (icon_area.height() - pm.height()) // 2
-                painter.drawPixmap(x, y, pm)
-
-        text_rect = QRect(rect.left() + 3, icon_area.bottom() + pad,
-                          rect.width() - 6, text_h)
-        painter.setPen(pal.highlightedText().color() if selected else pal.text().color())
-        name = index.data(Qt.DisplayRole) or ""
-        painter.drawText(text_rect,
-                         Qt.AlignHCenter | Qt.AlignTop | Qt.TextWrapAnywhere,
-                         self._elide(name, fm, text_rect.width()))
-        painter.restore()
-
-    @staticmethod
-    def _elide(name: str, fm, width: int) -> str:
-        """两行放不下就中间省略 —— 扩展名比中间那截更值得保留。"""
-        if fm.horizontalAdvance(name) <= width * config.THUMB_LABEL_LINES:
-            return name
-        return fm.elidedText(name, Qt.ElideMiddle, width * config.THUMB_LABEL_LINES)
-
-    def sizeHint(self, option, index) -> QSize:
-        return self._view.gridSize()
-
-
-class Browser(QMainWindow):
+class Browser(ViewHostMixin, FileOpsMixin, QMainWindow):
     def __init__(self, start_dir: Path):
         super().__init__()
         self.setWindowTitle(config.APP_NAME)
@@ -471,206 +290,6 @@ class Browser(QMainWindow):
                 paths = [cur]
         return paths
 
-    # ------------------------------------------------------------- 看图
-    def _open_index(self, index: QModelIndex) -> None:
-        path = self._model.path_at(index)
-        if path:
-            self._open_viewer(self._model.index_of(path))
-
-    def _open_current(self) -> None:
-        idx = self._view.currentIndex()
-        if idx.isValid():
-            self._open_index(idx)
-
-    def _start_slideshow(self, start: int = 0) -> None:
-        """从第 start 张开始全屏幻灯演示。"""
-        if self._model.rowCount() == 0:
-            return
-        v = self._open_viewer(max(0, min(start, self._model.rowCount() - 1)))
-        if v:
-            self.showFullScreen()
-            v.toggle_slideshow()
-
-    def is_viewing(self) -> bool:
-        return self._viewer is not None
-
-    def _open_viewer(self, index: int) -> Viewer | None:
-        """切到看图页。同一个窗口，不开新窗。"""
-        files = self._model.paths()
-        if not files:
-            return None
-        if self._viewer is not None:
-            self._close_viewer()
-
-        self._loader.set_paused(True)          # 把 CPU 让给看图器
-        self._preview.set_paused(True)
-        v = Viewer(files, index)
-        v.exit_view.connect(self._on_exit_view)
-        v.file_deleted.connect(lambda p: self._model.remove_paths({p}))
-        self._viewer = v
-
-        self._stack.addWidget(v)
-        self._stack.setCurrentWidget(v)
-        # 浏览器的 Del / Enter / F5 等快捷键会抢走看图器的按键，先关掉
-        for a in self._browse_actions:
-            a.setEnabled(False)
-        self._status.hide()                     # 看图时信息走 OSD，状态栏是多余的
-        v.setFocus(Qt.OtherFocusReason)
-        return v
-
-    def _on_exit_view(self, path: Path | None) -> None:
-        self._close_viewer()
-        if path:
-            row = self._model.index_of(path)
-            if row >= 0:
-                idx = self._model.index(row, 0)
-                self._view.setCurrentIndex(idx)
-                self._view.scrollTo(idx, QAbstractItemView.EnsureVisible)
-        self._view.setFocus(Qt.OtherFocusReason)
-
-    def _close_viewer(self) -> None:
-        """拆掉看图页，回到缩略图页。"""
-        v, self._viewer = self._viewer, None
-        if v is not None:
-            v.teardown()
-            self._stack.removeWidget(v)
-            v.deleteLater()
-
-        if self.isFullScreen():
-            self.showNormal()
-        self._stack.setCurrentWidget(self._splitter)
-        self.menuBar().show()
-        self._status.show()
-        for a in self._browse_actions:
-            a.setEnabled(True)
-        self._loader.set_paused(False)
-        self._preview.set_paused(False)
-        self.setWindowTitle(f"{self._dir} — {config.APP_NAME}")
-        self._update_status()
-
-    def changeEvent(self, ev) -> None:
-        """全屏看图时把菜单栏也收掉 —— 屏幕上只该剩那张图。"""
-        if ev.type() == QEvent.WindowStateChange and self._viewer is not None:
-            self.menuBar().setVisible(not self.isFullScreen())
-        super().changeEvent(ev)
-
-    # ------------------------------------------------------------- 文件操作
-    def _rename(self) -> None:
-        path = self._current_path()
-        if path is None:
-            return
-        new, ok = QInputDialog.getText(self, "重命名", "新名称：",
-                                       QLineEdit.Normal, path.name)
-        if not ok or not new.strip() or new == path.name:
-            return
-        target = path.with_name(new.strip())
-        if target.exists():
-            QMessageBox.warning(self, "重命名", f"{target.name} 已存在。")
-            return
-        try:
-            path.rename(target)
-        except OSError as e:
-            QMessageBox.warning(self, "重命名失败", str(e))
-            return
-        self.refresh()
-        row = self._model.index_of(target)
-        if row >= 0:
-            self._view.setCurrentIndex(self._model.index(row, 0))
-
-    def _delete(self) -> None:
-        paths = self._selected_paths()
-        if not paths:
-            return
-        msg = f"删除 {paths[0].name}？" if len(paths) == 1 else f"删除选中的 {len(paths)} 个文件？"
-        if QMessageBox.question(self, "删除", msg,
-                                QMessageBox.Yes | QMessageBox.No,
-                                QMessageBox.No) != QMessageBox.Yes:
-            return
-        row = self._view.currentIndex().row()
-        failed = []
-        for p in paths:
-            try:
-                p.unlink()
-            except OSError as e:
-                failed.append(f"{p.name}: {e}")
-        self._model.remove_paths(set(paths))
-        if self._model.rowCount():
-            self._view.setCurrentIndex(
-                self._model.index(min(row, self._model.rowCount() - 1), 0))
-        if failed:
-            QMessageBox.warning(self, "部分删除失败", "\n".join(failed[:10]))
-        self._update_status()
-
-    def _copy(self) -> None:
-        paths = self._selected_paths()
-        if paths:
-            self._clipboard = ("copy", paths)
-            self._status.showMessage(f"已复制 {len(paths)} 个文件", 2000)
-
-    def _cut(self) -> None:
-        paths = self._selected_paths()
-        if paths:
-            self._clipboard = ("cut", paths)
-            self._status.showMessage(f"已剪切 {len(paths)} 个文件", 2000)
-
-    def _paste(self) -> None:
-        if not self._clipboard:
-            return
-        mode, paths = self._clipboard
-        self._do_transfer(paths, self._dir, move=(mode == "cut"))
-        if mode == "cut":
-            self._clipboard = None
-        self.refresh()
-
-    def _transfer(self, mode: str) -> None:
-        from PySide6.QtWidgets import QFileDialog
-        paths = self._selected_paths()
-        if not paths:
-            return
-        dest = QFileDialog.getExistingDirectory(
-            self, "复制到…" if mode == "copy" else "移动到…", str(self._dir))
-        if not dest:
-            return
-        self._do_transfer(paths, Path(dest), move=(mode == "move"))
-        if mode == "move":
-            self.refresh()
-
-    def _do_transfer(self, paths: list[Path], dest: Path, move: bool) -> None:
-        failed = []
-        for p in paths:
-            target = dest / p.name
-            if target.resolve() == p.resolve():
-                continue
-            target = self._unique_name(target)
-            try:
-                shutil.move(str(p), str(target)) if move else shutil.copy2(str(p), str(target))
-            except OSError as e:
-                failed.append(f"{p.name}: {e}")
-        if failed:
-            QMessageBox.warning(self, "部分操作失败", "\n".join(failed[:10]))
-        else:
-            verb = "移动" if move else "复制"
-            self._status.showMessage(f"已{verb} {len(paths)} 个文件到 {dest}", 3000)
-
-    @staticmethod
-    def _unique_name(target: Path) -> Path:
-        if not target.exists():
-            return target
-        stem, suffix = target.stem, target.suffix
-        n = 2
-        while True:
-            cand = target.with_name(f"{stem} ({n}){suffix}")
-            if not cand.exists():
-                return cand
-            n += 1
-
-    def _reveal(self) -> None:
-        path = self._current_path() or self._dir
-        try:
-            subprocess.Popen(["xdg-open", str(path.parent if path.is_file() else path)])
-        except OSError:
-            pass
-
     # ------------------------------------------------------------- 状态栏
     def _update_status(self, *_) -> None:
         total = self._model.rowCount()
@@ -787,43 +406,3 @@ class Browser(QMainWindow):
         self._preview.shutdown()
         self._loader.shutdown()
         super().closeEvent(ev)
-
-
-HELP_TEXT = """\
-【浏览器】
-  Enter / 双击      查看图片
-  Backspace         回到上级目录
-  F2                重命名
-  Del               删除
-  Ctrl+C / X / V    复制 / 剪切 / 粘贴到当前目录
-  Ctrl+Shift+C / M  复制到… / 移动到…
-  Ctrl++ / Ctrl+-   缩略图放大 / 缩小
-  F5                刷新
-  F9                显示 / 隐藏目录树
-  Ctrl+S            从第一张开始全屏幻灯片
-  右键 → 幻灯演示   从右键点中的那张开始全屏幻灯片
-
-【预览窗格】
-  菜单「查看 → 预览窗格」显示 / 隐藏选中图片的预览
-
-【看图器】
-  空格 / PgDn / →   下一张
-  退格 / PgUp / ←   上一张
-  Home / End        第一张 / 最后一张
-  + / -             放大 / 缩小
-  Z                 缩放到显示框（默认：小图也放大，铺满）
-  *                 适应窗口（小图不放大，ACDSee 原版行为）
-  /                 实际大小 1:1
-  W                 适应宽度
-  F / Enter / F11   全屏切换
-  S                 幻灯片开关
-  R                 乱序开关
-  D                 设定幻灯片间隔（任意秒数，0 = 尽快）
-  [ / ]             幻灯片间隔 减 / 加（档位 0 / 0.5 / 1 / 2 / 3 / 5 / 10 / 15 / 30 / 60 秒）
-  I                 显示 / 隐藏信息条
-  Del               删除当前图片
-  Esc               退出全屏 / 返回浏览
-
-  鼠标：单击翻页，拖拽平移，滚轮翻页，
-        Ctrl+滚轮 缩放，中键切换 适应/1:1，双击全屏
-"""

@@ -2,22 +2,25 @@
 
 原版的灵魂：打开即见图，翻页无延迟，手不离键盘，屏幕上除了图什么都没有。
 所以这里没有工具栏、没有侧边栏，信息全部走可开关的 OSD 叠层。
+
+这个文件只留视图主体：导航、加载回调、缩放、键鼠事件、删除。
+其余按功能分了出去：
+  slideshow.py  幻灯片间隔与乱序播放
+  render.py     paintEvent 与 OSD 叠层
 """
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QColor, QFont, QImage, QKeySequence,
-                           QPainter, QPixmap)
-from PySide6.QtWidgets import (QApplication, QInputDialog, QMenu, QMessageBox,
-                               QWidget)
+from PySide6.QtCore import QPoint, QTimer, Qt, Signal
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
 
 from . import config
 from .loader import ImageLoader
-from .util import format_size, human_dims
+from .render import RenderMixin
+from .slideshow import SlideshowMixin
 
 # FIT_WINDOW 是原版行为：小图不放大，一张 200px 的图在全屏下还是 200px。
 # FIT_FILL 是"真的铺满"：小图也放大到贴住显示框的短边。
@@ -31,7 +34,7 @@ FIT_NAMES = {
 }
 
 
-class Viewer(QWidget):
+class Viewer(SlideshowMixin, RenderMixin, QWidget):
     """看图视图。持有一份文件列表，自己负责在其中前后移动。
 
     既能当独立窗口（`acdseen photo.jpg` 直接开图），也能嵌进浏览器的
@@ -240,93 +243,6 @@ class Viewer(QWidget):
         self._scaled = None
         self._scaled_for = None
 
-    # ------------------------------------------------------------- 幻灯片
-    @staticmethod
-    def format_delay(delay: float) -> str:
-        if delay <= 0:
-            return "尽快"
-        return f"{delay:g} 秒"
-
-    def _interval_ms(self) -> int:
-        """0 秒不能真给 QTimer 传 0 —— 那是空转烧 CPU。给个最小节拍，
-        配合 _slideshow_tick 里"没解完就不翻"的守卫，实际就是解完即翻。"""
-        if self._slideshow_delay <= 0:
-            return config.SLIDESHOW_ASAP_MS
-        return int(self._slideshow_delay * 1000)
-
-    def toggle_slideshow(self) -> None:
-        if self._slideshow.isActive():
-            self._slideshow.stop()
-            self._flash("幻灯片：停止")
-        else:
-            self._slideshow.start(self._interval_ms())
-            order = "，乱序" if self._shuffle else ""
-            self._flash(f"幻灯片：{self.format_delay(self._slideshow_delay)}/张{order}")
-        self.update()
-
-    def _slideshow_tick(self) -> None:
-        # 上一张还没解完就不要往前跑，否则观感是跳帧。
-        # 0 秒档全靠这一条踩刹车。
-        if self._is_preview and self._image is None:
-            return
-        self.next_image()
-
-    def set_delay(self, delay: float) -> None:
-        """设成任意秒数，0 表示尽快。"""
-        self._slideshow_delay = max(config.SLIDESHOW_DELAY_MIN,
-                                    min(config.SLIDESHOW_DELAY_MAX, float(delay)))
-        if self._slideshow.isActive():
-            self._slideshow.start(self._interval_ms())
-        self._flash(f"幻灯片间隔：{self.format_delay(self._slideshow_delay)}")
-        self.update()
-
-    def _cycle_delay(self, direction: int) -> None:
-        delays = config.SLIDESHOW_DELAYS
-        # 当前值可能不在档位表里（用对话框设过任意值），退到最接近的那一档
-        i = min(range(len(delays)), key=lambda j: abs(delays[j] - self._slideshow_delay))
-        # 已经落在某一档上才移动，否则先归位到最接近的那档
-        if abs(delays[i] - self._slideshow_delay) < 1e-9:
-            i = max(0, min(len(delays) - 1, i + direction))
-        self.set_delay(delays[i])
-
-    def ask_delay(self) -> None:
-        """弹对话框设任意间隔。0 = 尽快。"""
-        value, ok = QInputDialog.getDouble(
-            self, "幻灯片间隔", "每张停留秒数（0 = 尽快）：",
-            float(self._slideshow_delay),
-            config.SLIDESHOW_DELAY_MIN, config.SLIDESHOW_DELAY_MAX, 1)
-        if ok:
-            self.set_delay(value)
-
-    # ------------------------------------------------------------- 乱序
-    def set_shuffle(self, on: bool) -> None:
-        """乱序直接洗 self._files 本身，导航 / 预读 / 删除全都不用改。
-        当前这张永远留在原地，切换顺序不会把你正在看的图换掉。"""
-        on = bool(on)
-        if on == self._shuffle:
-            return
-        self._shuffle = on
-        cur = self.current
-        if on:
-            rest = [p for p in self._files if p != cur]
-            random.shuffle(rest)
-            self._files = ([cur] if cur is not None else []) + rest
-        else:
-            # 还原原始顺序，但只留还在列表里的 —— 删掉的不能复活
-            alive = set(self._files)
-            self._files = [p for p in self._original_files if p in alive]
-        self._index = self._files.index(cur) if cur in self._files else 0
-        self._queue_read_ahead()
-        self._flash("乱序：开" if on else "乱序：关")
-        self.update()
-
-    def toggle_shuffle(self) -> None:
-        self.set_shuffle(not self._shuffle)
-
-    def _reshuffle(self) -> None:
-        """洗出新的一轮。放在跑完一轮之后，免得每轮都是同一个"随机"顺序。"""
-        random.shuffle(self._files)
-
     # ------------------------------------------------------------- 文件操作
     def delete_current(self) -> None:
         path = self.current
@@ -350,102 +266,6 @@ class Viewer(QWidget):
             self.exit_view.emit(None)   # 删光了，没什么可看的了
             return
         self._goto(min(self._index, len(self._files) - 1))
-
-    # ------------------------------------------------------------- 绘制
-    def paintEvent(self, ev) -> None:
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(24, 24, 26))
-
-        if self._error:
-            p.setPen(QColor(220, 90, 90))
-            f = QFont(); f.setPointSize(13); p.setFont(f)
-            p.drawText(self.rect(), Qt.AlignCenter, self._error)
-            self._paint_osd(p)
-            return
-
-        if self._pixmap is not None:
-            scale = self._effective_scale()
-            iw = max(1, int(self._pixmap.width() * scale))
-            ih = max(1, int(self._pixmap.height() * scale))
-
-            # 缩小时预先重采样一次并缓存，之后每帧只是 blit
-            key = (round(scale, 4), iw, ih)
-            if self._scaled_for != key:
-                # 缩小、以及 2 倍以内的放大都用平滑插值 —— "缩放到显示框"
-                # 基本都落在这个区间，用最近邻会糊成马赛克。
-                # 再往上是在看像素，最近邻反而更快也更该保留原样。
-                mode = Qt.FastTransformation if scale > 2.0 else Qt.SmoothTransformation
-                if abs(scale - 1.0) < 1e-6:
-                    self._scaled = self._pixmap
-                else:
-                    self._scaled = self._pixmap.scaled(iw, ih, Qt.IgnoreAspectRatio, mode)
-                self._scaled_for = key
-
-            x = (self.width() - iw) // 2 + self._offset.x()
-            y = (self.height() - ih) // 2 + self._offset.y()
-            p.drawPixmap(x, y, self._scaled)
-
-        self._paint_osd(p)
-
-    def _paint_osd(self, p: QPainter) -> None:
-        lines: list[str] = []
-        if self._show_osd and self.current:
-            path = self.current
-            info = [f"[{self._index + 1}/{len(self._files)}]", path.name]
-            if self._image:
-                info.append(human_dims(self._image.width(), self._image.height()))
-            try:
-                info.append(format_size(path.stat().st_size))
-            except OSError:
-                pass
-            info.append(f"{self._effective_scale() * 100:.0f}%")
-            if self._is_preview and self._image is not None:
-                info.append("· 精修中")
-            if self._slideshow.isActive():
-                info.append(f"▶ {self.format_delay(self._slideshow_delay)}")
-            if self._shuffle:
-                info.append("⤨ 乱序")
-            lines.append("   ".join(info))
-
-        if self._transient:
-            lines.append(self._transient)
-
-        if not lines:
-            return
-
-        p.setRenderHint(QPainter.TextAntialiasing)
-        f = QFont(); f.setPointSize(10); p.setFont(f)
-        fm = p.fontMetrics()
-        pad, gap = 8, 4
-        w = max(fm.horizontalAdvance(t) for t in lines) + pad * 2
-        h = len(lines) * fm.height() + pad * 2 + (len(lines) - 1) * gap
-        box = QRect(12, self.height() - h - 12, w, h)
-
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(0, 0, 0, 165))
-        p.drawRoundedRect(box, 4, 4)
-        p.setPen(QColor(235, 235, 235))
-        y = box.top() + pad + fm.ascent()
-        for t in lines:
-            p.drawText(box.left() + pad, y, t)
-            y += fm.height() + gap
-
-    def _flash(self, text: str, msec: int = 1200) -> None:
-        self._transient = text
-        self._osd_timer.start(msec)
-        self.update()
-
-    def _hide_transient_osd(self) -> None:
-        self._transient = None
-        self.update()
-
-    def _update_title(self) -> None:
-        if self.current:
-            self.window().setWindowTitle(f"{self.current.name} — {config.APP_NAME}")
-
-    def resizeEvent(self, ev) -> None:
-        self._invalidate_scaled()
-        super().resizeEvent(ev)
 
     # ------------------------------------------------------------- 输入
     def keyPressEvent(self, ev) -> None:
