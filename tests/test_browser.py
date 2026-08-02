@@ -90,6 +90,52 @@ def test_切目录树可见性(browser):
     assert browser._left_splitter.sizes()[0] > 0
 
 
+def test_点软链接目录不跳到真实路径(qapp, tmp_path, pics):
+    """回归：set_directory 曾用 resolve()，点软链接目录会跟着跳到真实路径，
+    树上的选中行当场从你点的那一行蹦到别处。"""
+    import os
+    real = tmp_path / "real" / "photos"
+    real.mkdir(parents=True)
+    (real / "a.png").write_bytes((pics / "IMG_001.png").read_bytes())
+    link = tmp_path / "link_to_photos"
+    os.symlink(real, link)
+
+    b = Browser(tmp_path)
+    b.resize(900, 600)
+    b.show()
+    pump(qapp, 1500)
+
+    fs, tree = b._fs, b._tree
+    root = fs.index(str(tmp_path))
+    fs.fetchMore(root)
+    pump(qapp, 1000)
+
+    idx = fs.index(str(link))
+    assert idx.isValid(), "夹具没建出软链接，测试本身失效"
+    tree.setCurrentIndex(idx)          # 等价于用户点这一行
+    pump(qapp, 1000)
+
+    assert b._dir == link, "当前目录应停在软链接本身"
+    assert fs.filePath(tree.currentIndex()) == str(link), "树上不该跳到 real/photos"
+    assert [p.name for p in b._model.paths()] == ["a.png"], "内容仍要正常列出"
+    b.close()
+    pump(qapp, 300)
+
+
+def test_同步树选中不递归回调(qapp, browser, tmp_path):
+    """set_directory 里的 setCurrentIndex 不该再触发 _on_tree_changed —
+    currentChanged 连在 selectionModel 上，拦 QTreeView 的信号拦不住。"""
+    calls = []
+    orig = browser.set_directory
+    browser.set_directory = lambda d: (calls.append(d), orig(d))[1]
+    idx = browser._fs.index(str(tmp_path))
+    if idx.isValid():
+        browser._tree.setCurrentIndex(idx)
+        pump(qapp, 500)
+        assert len(calls) == 1, f"set_directory 被重入了：{calls}"
+    browser.set_directory = orig
+
+
 def test_预览窗格可见性开关(browser):
     """模拟菜单点击：Qt 先切 checked，再发 triggered 调 _toggle_preview。"""
     assert browser._preview.isVisible()

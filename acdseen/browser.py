@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -376,7 +377,10 @@ class Browser(QMainWindow):
 
     # ------------------------------------------------------------- 目录
     def set_directory(self, directory: Path) -> None:
-        directory = directory.expanduser().resolve()
+        # 只做词法规范化（展开 ~、去掉 ..、转绝对路径），绝不能用 resolve()：
+        # 它会跟着软链接走到真实路径，于是点软链接目录时树上会从你点的那一行
+        # 蹦到别处去 —— 看起来就是"点 A 跳到 B"。
+        directory = Path(os.path.abspath(os.path.expanduser(str(directory))))
         if not directory.is_dir():
             return
         self._dir = directory
@@ -390,11 +394,14 @@ class Browser(QMainWindow):
         self._update_status()
 
         idx = self._fs.index(str(directory))
-        if idx.isValid():
-            self._tree.blockSignals(True)
+        if idx.isValid() and idx != self._tree.currentIndex():
+            # currentChanged 连在 selectionModel 上，拦 self._tree 的信号是拦不住的，
+            # 不拦对地方就会从 _on_tree_changed 里递归回 set_directory。
+            sel = self._tree.selectionModel()
+            sel.blockSignals(True)
             self._tree.setCurrentIndex(idx)
             self._tree.scrollTo(idx, QAbstractItemView.PositionAtCenter)
-            self._tree.blockSignals(False)
+            sel.blockSignals(False)
 
     def refresh(self) -> None:
         current = self._current_path()

@@ -13,6 +13,20 @@
   - 选中项 / 切目录 / 删除后自动同步；看图时暂停解码让路，退出看图后恢复
   - 菜单「查看 → 预览窗格」可开关，可见性与左列分割条位置随 `QSettings` 持久化
 
+### 变更
+
+- **看图器不再另开窗**：改成主窗口 `QStackedWidget` 的一页，屏幕上仍然只剩那张图
+  - `Viewer` 不再决定自己的去留，改发 `exit_view` 信号；独立启动（`acdseen photo.jpg`）行为不变
+  - 进入看图时禁用浏览器的 `Del` / `Enter` / `F5` 等快捷键，否则会抢在看图器的按键处理之前触发
+
+### 修复
+
+- **点击目录树上的软链接目录会跳到别的目录**：`set_directory()` 用了 `Path.resolve()`，
+  它会穿透软链接拿到真实路径，再拿这个路径去移动树的选中行，视觉上就是"点 A 跳到 B"。
+  改为只做词法规范化（`os.path.abspath` + `expanduser`）。
+- 同步树选中时 `blockSignals()` 拦错了对象（`currentChanged` 连在 `selectionModel` 上，
+  不是 `QTreeView` 上），导致 `set_directory()` 被递归重入一次。
+
 ## [0.1.0] - 2026-08-02
 
 初始版本：ACDSee 1.2x 复刻的核心体验已就绪。
