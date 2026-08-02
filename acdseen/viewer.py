@@ -58,8 +58,11 @@ class Viewer(QWidget):
         self._is_preview = False          # 当前显示的是不是第一段的低清图
         self._error: str | None = None
 
-        self._fit_mode = FIT_WINDOW
-        self._base_fit = FIT_WINDOW   # 手动缩放后翻页要回到的模式
+        # 默认铺满显示框：单页看图和幻灯放映都该占满窗口，小图也放大。
+        # 想要原版那种"小图不放大"，按 * 切到 FIT_WINDOW。
+        self._fit_mode = FIT_FILL
+        self._base_fit = FIT_FILL     # 手动缩放后翻页要回到的模式
+        self._prev_fit = FIT_FILL     # 中键从 1:1 切回来时要回到的模式
         self._scale = 1.0
         self._offset = QPoint(0, 0)       # 图像相对视口中心的平移
         self._drag_from: QPoint | None = None
@@ -546,7 +549,13 @@ class Viewer(QWidget):
             if moved <= 3:
                 self.next_image()   # 单击翻页
         elif ev.button() == Qt.MiddleButton:
-            self._set_fit(FIT_WINDOW if self._fit_mode != FIT_WINDOW else FIT_ONE_TO_ONE)
+            # 在"你选的适应模式"和 1:1 之间来回。不能直接读 _base_fit——
+            # 切到 1:1 时它自己也会变成 1:1，那样就再也切不回来了。
+            if self._fit_mode == FIT_ONE_TO_ONE:
+                self._set_fit(self._prev_fit)
+            else:
+                self._prev_fit = self._base_fit
+                self._set_fit(FIT_ONE_TO_ONE)
 
     def mouseDoubleClickEvent(self, ev) -> None:
         self.toggle_fullscreen()
@@ -557,6 +566,8 @@ class Viewer(QWidget):
         m.addAction("上一张\tBackspace", self.prev_image)
         m.addSeparator()
         m.addAction("适应窗口\t*", lambda: self._set_fit(FIT_WINDOW))
+        m.addAction("缩放到显示框\tZ", lambda: self._set_fit(FIT_FILL))
+        m.addAction("适应宽度\tW", lambda: self._set_fit(FIT_WIDTH))
         m.addAction("实际大小\t/", lambda: self._set_fit(FIT_ONE_TO_ONE))
         m.addAction("全屏\tF", self.toggle_fullscreen)
         m.addSeparator()

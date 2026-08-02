@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from acdseen import config
 from acdseen.util import list_images
-from acdseen.viewer import (FIT_FREE, FIT_ONE_TO_ONE, FIT_WIDTH, FIT_WINDOW,
+from acdseen.viewer import (FIT_FILL, FIT_FREE, FIT_ONE_TO_ONE, FIT_WIDTH, FIT_WINDOW,
                             Viewer)
 from conftest import pump
 
@@ -90,14 +90,26 @@ def test_预读命中时同步换成新图(qapp, viewer):
     assert not viewer._is_preview, "缓存命中拿到的应当是全尺寸，不是预览"
 
 
-def test_适应窗口不放大小图(qapp, pics):
-    """原版行为：小图保持原始尺寸，不拉伸铺满。"""
+def test_默认就把小图铺满显示框(qapp, pics):
+    """单页看图和幻灯放映都该占满窗口，不用先按 Z。"""
     small = pics / "IMG_003.gif"           # 320x240
     v = Viewer([small], 0)
     v.resize(1600, 1200)
     v.show()
     pump(qapp, 4000, lambda: v._image is not None)
-    assert v._fit_mode == FIT_WINDOW
+    assert v._fit_mode == FIT_FILL, "默认就该是缩放到显示框"
+    assert v._effective_scale() > 1.0, "小图默认就要放大"
+    v.close()
+
+
+def test_按星号切回原版的不放大(qapp, pics):
+    """* 保留 ACDSee 原版行为：小图保持原始尺寸。"""
+    small = pics / "IMG_003.gif"           # 320x240
+    v = Viewer([small], 0)
+    v.resize(1600, 1200)
+    v.show()
+    pump(qapp, 4000, lambda: v._image is not None)
+    v._set_fit(FIT_WINDOW)
     assert v._effective_scale() == 1.0
     v.close()
 
@@ -385,3 +397,95 @@ def test_乱序时删图不会让文件复活(qapp, workdir, monkeypatch):
     assert doomed not in v._files, "删掉的图不能靠关乱序复活"
     assert len(v._files) == len(files) - 1
     v.close()
+
+
+# ------------------------------------------------------------------ 缩放到显示框
+def _small_pic(tmp_path):
+    """一张远小于窗口的图，用来区分「适应窗口」和「缩放到显示框」。"""
+    from PySide6.QtGui import QImage, QColor
+    p = tmp_path / "small.png"
+    img = QImage(120, 90, QImage.Format_RGB888)
+    img.fill(QColor(200, 60, 60))
+    assert img.save(str(p))
+    return p
+
+
+def test_适应窗口不放大小图(qapp, tmp_path):
+    v = Viewer([_small_pic(tmp_path)], 0)
+    v.resize(1000, 700)
+    v.show()
+    pump(qapp, 4000, lambda: v._image is not None)
+    v._set_fit(FIT_WINDOW)
+    assert v._effective_scale() == 1.0, "原版行为：小图保持原尺寸"
+    v.close()
+
+
+def test_缩放到显示框会放大小图(qapp, tmp_path):
+    v = Viewer([_small_pic(tmp_path)], 0)
+    v.resize(1000, 700)
+    v.show()
+    pump(qapp, 4000, lambda: v._image is not None)
+    v._set_fit(FIT_FILL)
+    s = v._effective_scale()
+    assert s > 1.0, "小图必须放大"
+    # 贴住短边：120x90 放进 1000x700 → 受高度限制
+    assert s == pytest.approx(min(v.width() / 120, v.height() / 90))
+    assert int(120 * s) <= v.width() and int(90 * s) <= v.height(), "不能超出显示框"
+    v.close()
+
+
+def test_缩放到显示框保持长宽比(qapp, tmp_path):
+    v = Viewer([_small_pic(tmp_path)], 0)
+    v.resize(400, 900)          # 竖长窗口，和图的横长比例相反
+    v.show()
+    pump(qapp, 4000, lambda: v._image is not None)
+    v._set_fit(FIT_FILL)
+    s = v._effective_scale()
+    assert s == pytest.approx(v.width() / 120), "该受宽度限制"
+    assert int(90 * s) < v.height(), "高度方向留白，不拉伸"
+    v.close()
+
+
+def test_大图时两种模式一致(qapp, viewer):
+    """图比窗口大时，适应窗口和缩放到显示框算出来是同一个值。"""
+    viewer._set_fit(FIT_WINDOW)
+    a = viewer._effective_scale()
+    viewer._set_fit(FIT_FILL)
+    assert viewer._effective_scale() == pytest.approx(a)
+    assert a < 1.0, "夹具图应该比窗口大，否则这条测试没意义"
+
+
+def test_缩放模式跨图保持(qapp, viewer):
+    """幻灯放映时选了缩放到显示框，每张都该铺满，不能翻一张就退回适应窗口。"""
+    viewer._set_fit(FIT_FILL)
+    viewer.next_image()
+    pump(qapp, 4000, lambda: viewer._image is not None)
+    assert viewer._fit_mode == FIT_FILL
+
+
+def test_手动缩放后翻页回到选定模式(qapp, viewer):
+    viewer._set_fit(FIT_FILL)
+    viewer.zoom_by(+1)                 # 进入 FIT_FREE
+    assert viewer._fit_mode == FIT_FREE
+    viewer.next_image()
+    pump(qapp, 4000, lambda: viewer._image is not None)
+    assert viewer._fit_mode == FIT_FILL, "该回到缩放到显示框，而不是一律退回适应窗口"
+
+
+def test_中键在适应模式和1比1之间来回(qapp, viewer):
+    """回归：切到 1:1 时 _base_fit 也会变成 1:1，直接读它就再也切不回来。"""
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtCore import QEvent, QPointF
+
+    def middle_click():
+        ev = QMouseEvent(QEvent.MouseButtonRelease, QPointF(10, 10), QPointF(10, 10),
+                         Qt.MiddleButton, Qt.MiddleButton, Qt.NoModifier)
+        viewer.mouseReleaseEvent(ev)
+
+    viewer._set_fit(FIT_WINDOW)
+    middle_click()
+    assert viewer._fit_mode == FIT_ONE_TO_ONE
+    middle_click()
+    assert viewer._fit_mode == FIT_WINDOW, "该回到你选的适应模式"
+    middle_click()
+    assert viewer._fit_mode == FIT_ONE_TO_ONE, "来回切必须一直有效"
