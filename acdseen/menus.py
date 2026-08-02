@@ -63,6 +63,11 @@ class MenuMixin:
         self._preview_act.setChecked(True)
         self._preview_act.triggered.connect(self._toggle_preview)
         m_view.addAction(self._preview_act)
+        m_view.addSeparator()
+        self._win95_act = QAction("Windows 95 外观", self, checkable=True)
+        self._win95_act.setChecked(config.DEFAULT_WIN95_LOOK)
+        self._win95_act.triggered.connect(self._toggle_win95)
+        m_view.addAction(self._win95_act)
         self._act("清空缩略图缓存", None, self._clear_cache, m_view)
 
         m_sort = mb.addMenu("排序(&S)")

@@ -51,6 +51,11 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName(config.ORG_NAME)
     app.setApplicationDisplayName(config.APP_NAME)
 
+    from . import theme
+    s = QSettings(config.ORG_NAME, config.APP_NAME)
+    on = s.value("win95_look", config.DEFAULT_WIN95_LOOK, type=bool)
+    theme.apply(app, on)
+
     args = [a for a in argv[1:] if not a.startswith("-")]
     target = Path(args[0]).expanduser() if args else None
 

@@ -182,6 +182,16 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
     def _on_selection_changed(self, *_) -> None:
         self._preview.show_path(self._current_path())
 
+    def _toggle_win95(self, checked: bool | None = None) -> None:
+        """切 Win95 外观。样式是 app 级的，所以直接作用在 QApplication 上。"""
+        from PySide6.QtWidgets import QApplication
+        from . import theme
+        on = (not self._win95_act.isChecked()) if checked is None else bool(checked)
+        self._win95_act.setChecked(on)
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply(app, on)
+
     def _clear_cache(self) -> None:
         self._loader.clear_disk_cache()
         self.refresh()
@@ -252,6 +262,8 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             self._left_splitter.setSizes([int(x) for x in left_sizes])
         # 注意：PySide6 里 value(key, type=bool) 在键缺失时返回 False 而非 None，
         # 不能用 `is not None` 判断，必须查键是否存在。
+        if s.contains("win95_look"):
+            self._toggle_win95(bool(s.value("win95_look", type=bool)))
         if s.contains("preview_visible"):
             visible = bool(s.value("preview_visible"))
             self._preview_act.setChecked(visible)
@@ -280,6 +292,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         s.setValue("splitter", self._splitter.sizes())
         s.setValue("left_splitter", self._left_splitter.sizes())
         s.setValue("preview_visible", self._preview_act.isChecked())
+        s.setValue("win95_look", self._win95_act.isChecked())
         s.setValue("thumb_size", self._thumb_edge)   # 列表模式下模型是 40，别存那个
         s.setValue("view_mode", self._view_mode)
         s.setValue("sort_key", self._sort_key)

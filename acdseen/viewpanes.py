@@ -42,7 +42,6 @@ class ViewPanesMixin:
         self._list_view.setRootIsDecorated(False)
         self._list_view.setUniformRowHeights(True)
         self._list_view.setAllColumnsShowFocus(True)
-        self._list_view.setAlternatingRowColors(True)
         self._list_view.setIconSize(QSize(config.LIST_THUMB_SIZE, config.LIST_THUMB_SIZE))
         # 共享选择模型：两个视图的当前项和选中集自动同步，切视图不用手动搬
         self._list_view.setSelectionModel(self._icon_view.selectionModel())

@@ -79,6 +79,12 @@ SORT_NAMES = {
 SORT_NEEDS_DIMS = {SORT_PIXELS, SORT_WIDTH, SORT_HEIGHT}
 
 
+# ---------------------------------------------------------------- 外观
+# Win95 外观默认开着 —— 这个项目复刻的就是 1996 年那套东西，
+# 灰底立体边框比今天的扁平样式更对味。菜单「查看 → Windows 95 外观」可关。
+DEFAULT_WIN95_LOOK = True
+
+
 # ---------------------------------------------------------------- 浏览视图
 VIEW_THUMBS, VIEW_LIST = range(2)
 VIEW_NAMES = {VIEW_THUMBS: "缩略图", VIEW_LIST: "列表"}

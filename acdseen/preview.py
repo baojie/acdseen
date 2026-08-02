@@ -16,7 +16,8 @@ from pathlib import Path
 
 from PySide6.QtCore import (QObject, QRunnable, QRect, QThreadPool, QTimer,
                             Qt, Signal, Slot)
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
+                           QPalette)
 from PySide6.QtWidgets import QWidget
 
 from .loader import image_dimensions, load_image
@@ -148,12 +149,16 @@ class PreviewPane(QWidget):
 
     # ------------------------------------------------------------- 绘制
     def paintEvent(self, ev) -> None:
+        # 颜色全走调色板 —— 这样套上 Win95 外观时窗格跟着变灰白，
+        # 不会在一片灰底里留一块突兀的黑
+        pal = self.palette()
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(20, 20, 22))
+        p.fillRect(self.rect(), pal.base())
         p.setRenderHint(QPainter.SmoothPixmapTransform)
+        self._paint_sunken_frame(p, pal)
 
         info_h = self._info_height()
-        img_area = QRect(0, 0, self.width(), self.height() - info_h)
+        img_area = QRect(2, 2, self.width() - 4, self.height() - info_h - 2)
 
         if self._path is None:
             self._paint_hint(p, "选择一张图片查看预览", img_area)
@@ -178,8 +183,18 @@ class PreviewPane(QWidget):
 
     def _paint_hint(self, p: QPainter, text: str, area: QRect) -> None:
         f = QFont(); f.setPointSize(10); p.setFont(f)
-        p.setPen(QColor(140, 140, 148))
+        p.setPen(self.palette().color(QPalette.Disabled, QPalette.Text))
         p.drawText(area, Qt.AlignCenter, text)
+
+    def _paint_sunken_frame(self, p: QPainter, pal) -> None:
+        """Win95 的凹陷边：左上暗、右下亮。深色主题下这两色也自动跟着走。"""
+        w, h = self.width(), self.height()
+        p.save()
+        p.setPen(pal.color(QPalette.Shadow))
+        p.drawLine(0, 0, w - 1, 0); p.drawLine(0, 0, 0, h - 1)
+        p.setPen(pal.color(QPalette.Light))
+        p.drawLine(0, h - 1, w - 1, h - 1); p.drawLine(w - 1, 0, w - 1, h - 1)
+        p.restore()
 
     def _info_line(self) -> str:
         if self._path is None:
@@ -205,9 +220,10 @@ class PreviewPane(QWidget):
         f = QFont(); f.setPointSize(10); p.setFont(f)
         fm = QFontMetrics(f)
         h = self._info_height()
-        bar = QRect(0, self.height() - h, self.width(), h)
-        p.fillRect(bar, QColor(28, 28, 32))
-        p.setPen(QColor(200, 200, 205))
+        pal = self.palette()
+        bar = QRect(2, self.height() - h - 2, self.width() - 4, h)
+        p.fillRect(bar, pal.window())
+        p.setPen(pal.color(QPalette.WindowText))
         p.drawText(bar.adjusted(8, 0, -8, 0), Qt.AlignVCenter | Qt.AlignLeft,
                    fm.elidedText(text, Qt.ElideMiddle, bar.width() - 16))
 
