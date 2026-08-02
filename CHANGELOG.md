@@ -3,6 +3,16 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+
+- **预览窗格**（`preview.py`）：浏览器左下方显示当前选中图片的大图预览
+  - 复刻原版 ACDSee 1.x 的 Preview Pane（Mac 版 1.5.1 默认就在左下角）
+  - 单线程解码 + generation 作废；解码目标跟着窗格大小走，resize 用单发 QTimer 防抖重载
+  - 选中项 / 切目录 / 删除后自动同步；看图时暂停解码让路，退出看图后恢复
+  - 菜单「查看 → 预览窗格」可开关，可见性与左列分割条位置随 `QSettings` 持久化
+
 ## [0.1.0] - 2026-08-02
 
 初始版本：ACDSee 1.2x 复刻的核心体验已就绪。

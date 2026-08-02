@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         index = files.index(target) if target in files else 0
         v = Viewer(files, index)
         v.showFullScreen()
+        # 独立模式下没有可返回的浏览页，Esc 就是退出
+        v.exit_view.connect(lambda _p: v.close())
         v.closed.connect(lambda _p: app.quit())
         return app.exec()
 

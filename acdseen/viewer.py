@@ -21,15 +21,20 @@ FIT_WINDOW, FIT_WIDTH, FIT_ONE_TO_ONE, FIT_FREE = range(4)
 
 
 class Viewer(QWidget):
-    """看图窗口。持有一份文件列表，自己负责在其中前后移动。"""
+    """看图视图。持有一份文件列表，自己负责在其中前后移动。
 
-    closed = Signal(object)          # 关闭时把当前路径回传给浏览器，用于同步选中
+    既能当独立窗口（`acdseen photo.jpg` 直接开图），也能嵌进浏览器的
+    QStackedWidget 当一页用。区别只在于谁来响应 exit_view：
+    独立时是退出程序，嵌入时是切回缩略图页。
+    """
+
+    exit_view = Signal(object)       # 请求退出查看，带上当前路径
+    closed = Signal(object)          # 窗口真的被关掉了（仅独立模式）
     file_deleted = Signal(object)
 
     def __init__(self, files: list[Path], index: int, parent=None):
         super().__init__(parent)
         self.setWindowTitle(config.APP_NAME)
-        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
         self.setCursor(Qt.ArrowCursor)
@@ -80,7 +85,7 @@ class Viewer(QWidget):
     # ------------------------------------------------------------- 导航
     def _goto(self, index: int, initial: bool = False) -> None:
         if not self._files:
-            self.close()
+            self.exit_view.emit(None)
             return
         self._index = index % len(self._files)
         path = self._files[self._index]
@@ -253,7 +258,7 @@ class Viewer(QWidget):
         self.file_deleted.emit(path)
         del self._files[self._index]
         if not self._files:
-            self.close()
+            self.exit_view.emit(None)   # 删光了，没什么可看的了
             return
         self._goto(min(self._index, len(self._files) - 1))
 
@@ -342,7 +347,7 @@ class Viewer(QWidget):
 
     def _update_title(self) -> None:
         if self.current:
-            self.setWindowTitle(f"{self.current.name} — {config.APP_NAME}")
+            self.window().setWindowTitle(f"{self.current.name} — {config.APP_NAME}")
 
     def resizeEvent(self, ev) -> None:
         self._invalidate_scaled()
@@ -391,10 +396,10 @@ class Viewer(QWidget):
         elif k == Qt.Key_Delete:
             self.delete_current()
         elif k == Qt.Key_Escape:
-            if self.isFullScreen():
-                self.showNormal()
+            if self.window().isFullScreen():
+                self.window().showNormal()
             else:
-                self.close()
+                self.exit_view.emit(self.current)
         else:
             super().keyPressEvent(ev)
 
@@ -403,11 +408,13 @@ class Viewer(QWidget):
         self.update()
 
     def toggle_fullscreen(self) -> None:
-        if self.isFullScreen():
-            self.showNormal()
-        else:
-            self.showFullScreen()
+        # 作用于顶层窗口：嵌入浏览器时是主窗口，独立时就是自己
+        win = self.window()
+        win.showNormal() if win.isFullScreen() else win.showFullScreen()
         self._invalidate_scaled()
+
+    def is_fullscreen(self) -> bool:
+        return self.window().isFullScreen()
 
     def wheelEvent(self, ev) -> None:
         delta = ev.angleDelta().y()
@@ -460,11 +467,15 @@ class Viewer(QWidget):
         act.setCheckable(True); act.setChecked(self._slideshow.isActive())
         m.addSeparator()
         m.addAction("删除\tDel", self.delete_current)
-        m.addAction("关闭\tEsc", self.close)
+        m.addAction("返回浏览\tEsc", lambda: self.exit_view.emit(self.current))
         m.exec(ev.globalPos())
 
-    def closeEvent(self, ev) -> None:
+    def teardown(self) -> None:
+        """停掉定时器和解码线程。宿主在丢弃这个视图前必须调用。"""
         self._slideshow.stop()
         self._loader.shutdown()
+
+    def closeEvent(self, ev) -> None:
+        self.teardown()
         self.closed.emit(self.current)
         super().closeEvent(ev)

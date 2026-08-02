@@ -19,11 +19,12 @@ from PySide6.QtGui import (QAction, QActionGroup, QColor, QIcon, QImage,
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileSystemModel,
                                QInputDialog, QLabel, QLineEdit, QListView,
                                QMainWindow, QMenu, QMessageBox, QSplitter,
-                               QStatusBar, QStyle, QStyledItemDelegate,
-                               QTreeView, QWidget)
+                               QStackedWidget, QStatusBar, QStyle,
+                               QStyledItemDelegate, QTreeView, QWidget)
 
 from . import config
 from .loader import ThumbnailLoader, image_dimensions
+from .preview import PreviewPane
 from .util import format_mtime, format_size, human_dims, list_images
 from .viewer import Viewer
 
@@ -263,17 +264,32 @@ class Browser(QMainWindow):
         self._view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._view.doubleClicked.connect(self._open_index)
         self._view.selectionModel().currentChanged.connect(self._update_status)
+        self._view.selectionModel().currentChanged.connect(self._on_selection_changed)
         self._view.installEventFilter(self)
         self._view.setContextMenuPolicy(Qt.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._file_context_menu)
         self._apply_grid()
 
-        self._splitter.addWidget(self._tree)
+        # 左列：目录树 + 预览窗格（原版 preview pane 就在左下方）
+        self._preview = PreviewPane()
+        self._left_splitter = QSplitter(Qt.Vertical)
+        self._left_splitter.addWidget(self._tree)
+        self._left_splitter.addWidget(self._preview)
+        self._left_splitter.setStretchFactor(0, 1)
+        self._left_splitter.setStretchFactor(1, 0)
+        self._left_splitter.setSizes([400, 220])
+
+        self._splitter.addWidget(self._left_splitter)
         self._splitter.addWidget(self._view)
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
-        self._splitter.setSizes([240, 900])
-        self.setCentralWidget(self._splitter)
+        self._splitter.setSizes([260, 900])
+
+        # 浏览 / 看图 是同一个窗口的两页，不是两个窗口。
+        # 看图时窗口里只剩那张图 —— 这正是原版 Viewer 的样子，只是不再另开窗。
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._splitter)
+        self.setCentralWidget(self._stack)
 
         self._status = QStatusBar()
         self._status_left = QLabel()
@@ -292,6 +308,7 @@ class Browser(QMainWindow):
 
     # ------------------------------------------------------------- 菜单
     def _build_menu(self) -> None:
+        self._browse_actions: list[QAction] = []
         mb = self.menuBar()
 
         m_file = mb.addMenu("文件(&F)")
@@ -307,7 +324,7 @@ class Browser(QMainWindow):
         self._act("复制到…", "Ctrl+Shift+C", lambda: self._transfer("copy"), m_file)
         self._act("移动到…", "Ctrl+Shift+M", lambda: self._transfer("move"), m_file)
         m_file.addSeparator()
-        self._act("退出", "Ctrl+Q", self.close, m_file)
+        self._act("退出", "Ctrl+Q", self.close, m_file, browse_only=False)
 
         m_view = mb.addMenu("查看(&V)")
         self._act("全选", QKeySequence.SelectAll, self._view.selectAll, m_view)
@@ -317,6 +334,10 @@ class Browser(QMainWindow):
         self._act("缩小缩略图", "Ctrl+-", lambda: self._step_thumb(-1), m_view)
         m_view.addSeparator()
         self._act("切换目录树", "F9", self._toggle_tree, m_view)
+        self._preview_act = QAction("预览窗格", self, checkable=True)
+        self._preview_act.setChecked(True)
+        self._preview_act.triggered.connect(self._toggle_preview)
+        m_view.addAction(self._preview_act)
         self._act("清空缩略图缓存", None, self._clear_cache, m_view)
 
         m_sort = mb.addMenu("排序(&S)")
@@ -336,16 +357,21 @@ class Browser(QMainWindow):
         self._act("从第一张开始幻灯片", "F5" if False else "Ctrl+S", self._start_slideshow, m_show)
 
         m_help = mb.addMenu("帮助(&H)")
-        self._act("快捷键", "F1", self._show_help, m_help)
-        self._act("关于", None, self._show_about, m_help)
+        self._act("快捷键", "F1", self._show_help, m_help, browse_only=False)
+        self._act("关于", None, self._show_about, m_help, browse_only=False)
 
-    def _act(self, text, shortcut, slot, menu) -> QAction:
+    def _act(self, text, shortcut, slot, menu, browse_only: bool = True) -> QAction:
         a = QAction(text, self)
         if shortcut:
             a.setShortcut(shortcut if isinstance(shortcut, QKeySequence) else QKeySequence(shortcut))
         a.triggered.connect(slot)
         menu.addAction(a)
         self.addAction(a)   # 让快捷键在整窗口生效
+        if browse_only:
+            # 这些快捷键（Del / Enter / F5 / Ctrl+C…）和看图器的按键撞车，
+            # 且 WindowShortcut 上下文会抢在 Viewer.keyPressEvent 之前触发。
+            # 进入看图模式时统一禁用。
+            self._browse_actions.append(a)
         return a
 
     # ------------------------------------------------------------- 目录
@@ -360,6 +386,7 @@ class Browser(QMainWindow):
         self.setWindowTitle(f"{directory} — {config.APP_NAME}")
         if files:
             self._view.setCurrentIndex(self._model.index(0, 0))
+        self._preview.show_path(self._current_path())   # 空目录时清空预览
         self._update_status()
 
         idx = self._fs.index(str(directory))
@@ -391,13 +418,24 @@ class Browser(QMainWindow):
         self.refresh()
 
     def _toggle_tree(self) -> None:
-        sizes = self._splitter.sizes()
+        """只收目录树，预览窗格留在原地。"""
+        sizes = self._left_splitter.sizes()
         if sizes[0] > 0:
             self._tree_width = sizes[0]
-            self._splitter.setSizes([0, sum(sizes)])
+            self._left_splitter.setSizes([0, sum(sizes)])
         else:
             w = getattr(self, "_tree_width", 240)
-            self._splitter.setSizes([w, max(200, sum(sizes) - w)])
+            self._left_splitter.setSizes([w, max(160, sum(sizes) - w)])
+
+    def _toggle_preview(self, checked: bool | None = None) -> None:
+        """菜单触发时 Qt 已经把 checked 翻好了传进来；
+        程序化调用（无参）则自己翻转，别让这个名字骗人。"""
+        visible = (not self._preview.isVisible()) if checked is None else bool(checked)
+        self._preview_act.setChecked(visible)
+        self._preview.setVisible(visible)
+
+    def _on_selection_changed(self, *_) -> None:
+        self._preview.show_path(self._current_path())
 
     def _step_thumb(self, direction: int) -> None:
         sizes = config.THUMB_SIZES
@@ -441,35 +479,71 @@ class Browser(QMainWindow):
             return
         v = self._open_viewer(0)
         if v:
-            v.showFullScreen()
+            self.showFullScreen()
             v.toggle_slideshow()
 
+    def is_viewing(self) -> bool:
+        return self._viewer is not None
+
     def _open_viewer(self, index: int) -> Viewer | None:
+        """切到看图页。同一个窗口，不开新窗。"""
         files = self._model.paths()
         if not files:
             return None
         if self._viewer is not None:
-            self._viewer.close()
-        self._loader.set_paused(True)   # 把 CPU 让给看图器
+            self._close_viewer()
+
+        self._loader.set_paused(True)          # 把 CPU 让给看图器
+        self._preview.set_paused(True)
         v = Viewer(files, index)
-        v.closed.connect(self._on_viewer_closed)
+        v.exit_view.connect(self._on_exit_view)
         v.file_deleted.connect(lambda p: self._model.remove_paths({p}))
         self._viewer = v
-        v.show()
-        v.raise_()
-        v.activateWindow()
+
+        self._stack.addWidget(v)
+        self._stack.setCurrentWidget(v)
+        # 浏览器的 Del / Enter / F5 等快捷键会抢走看图器的按键，先关掉
+        for a in self._browse_actions:
+            a.setEnabled(False)
+        self._status.hide()                     # 看图时信息走 OSD，状态栏是多余的
+        v.setFocus(Qt.OtherFocusReason)
         return v
 
-    def _on_viewer_closed(self, path: Path | None) -> None:
-        self._viewer = None
-        self._loader.set_paused(False)
+    def _on_exit_view(self, path: Path | None) -> None:
+        self._close_viewer()
         if path:
             row = self._model.index_of(path)
             if row >= 0:
                 idx = self._model.index(row, 0)
                 self._view.setCurrentIndex(idx)
                 self._view.scrollTo(idx, QAbstractItemView.EnsureVisible)
-        self.activateWindow()
+        self._view.setFocus(Qt.OtherFocusReason)
+
+    def _close_viewer(self) -> None:
+        """拆掉看图页，回到缩略图页。"""
+        v, self._viewer = self._viewer, None
+        if v is not None:
+            v.teardown()
+            self._stack.removeWidget(v)
+            v.deleteLater()
+
+        if self.isFullScreen():
+            self.showNormal()
+        self._stack.setCurrentWidget(self._splitter)
+        self.menuBar().show()
+        self._status.show()
+        for a in self._browse_actions:
+            a.setEnabled(True)
+        self._loader.set_paused(False)
+        self._preview.set_paused(False)
+        self.setWindowTitle(f"{self._dir} — {config.APP_NAME}")
+        self._update_status()
+
+    def changeEvent(self, ev) -> None:
+        """全屏看图时把菜单栏也收掉 —— 屏幕上只该剩那张图。"""
+        if ev.type() == QEvent.WindowStateChange and self._viewer is not None:
+            self.menuBar().setVisible(not self.isFullScreen())
+        super().changeEvent(ev)
 
     # ------------------------------------------------------------- 文件操作
     def _rename(self) -> None:
@@ -656,6 +730,15 @@ class Browser(QMainWindow):
         sizes = s.value("splitter")
         if sizes:
             self._splitter.setSizes([int(x) for x in sizes])
+        left_sizes = s.value("left_splitter")
+        if left_sizes:
+            self._left_splitter.setSizes([int(x) for x in left_sizes])
+        # 注意：PySide6 里 value(key, type=bool) 在键缺失时返回 False 而非 None，
+        # 不能用 `is not None` 判断，必须查键是否存在。
+        if s.contains("preview_visible"):
+            visible = bool(s.value("preview_visible"))
+            self._preview_act.setChecked(visible)
+            self._preview.setVisible(visible)
         edge = s.value("thumb_size", type=int)
         if edge in config.THUMB_SIZES:
             self._model.set_thumb_size(edge)
@@ -670,12 +753,15 @@ class Browser(QMainWindow):
         s = self._settings
         s.setValue("geometry", self.saveGeometry())
         s.setValue("splitter", self._splitter.sizes())
+        s.setValue("left_splitter", self._left_splitter.sizes())
+        s.setValue("preview_visible", self._preview_act.isChecked())
         s.setValue("thumb_size", self._model.thumb_size())
         s.setValue("sort_key", self._sort_key)
         s.setValue("sort_reverse", self._sort_reverse)
         s.setValue("last_dir", str(self._dir))
         if self._viewer:
-            self._viewer.close()
+            self._viewer.teardown()
+        self._preview.shutdown()
         self._loader.shutdown()
         super().closeEvent(ev)
 
@@ -693,6 +779,9 @@ HELP_TEXT = """\
   F9                显示 / 隐藏目录树
   Ctrl+S            从第一张开始全屏幻灯片
 
+【预览窗格】
+  菜单「查看 → 预览窗格」显示 / 隐藏选中图片的预览
+
 【看图器】
   空格 / PgDn / →   下一张
   退格 / PgUp / ←   上一张
@@ -706,7 +795,7 @@ HELP_TEXT = """\
   [ / ]             幻灯片间隔 减 / 加
   I                 显示 / 隐藏信息条
   Del               删除当前图片
-  Esc               退出全屏 / 关闭
+  Esc               退出全屏 / 返回浏览
 
   鼠标：单击翻页，拖拽平移，滚轮翻页，
         Ctrl+滚轮 缩放，中键切换 适应/1:1，双击全屏

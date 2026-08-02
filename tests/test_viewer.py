@@ -210,32 +210,54 @@ def test_删除后跳到下一张(qapp, workdir, monkeypatch):
     v.close()
 
 
-def test_删除最后一张后关闭(qapp, tmp_path, pics, monkeypatch):
+def test_删除最后一张后请求退出(qapp, tmp_path, pics, monkeypatch):
     from PySide6.QtWidgets import QMessageBox
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: QMessageBox.Yes))
     lone = tmp_path / "only.png"
     lone.write_bytes((pics / "IMG_001.png").read_bytes())
 
-    from shiboken6 import isValid
-
     v = Viewer([lone], 0)
     v.show()
     pump(qapp, 4000, lambda: v._image is not None)
+
+    exits = []
+    v.exit_view.connect(lambda p: exits.append(p))
     v.delete_current()
     pump(qapp, 500)
 
-    # Viewer 带 WA_DeleteOnClose，关掉后 C++ 对象直接销毁 —— 只能验证这个
     assert not lone.exists()
-    assert not isValid(v) or not v.isVisible()
+    assert exits == [None], "删光了必须请求退出，否则停在空白页"
+    v.close()
+
+
+def test_Esc请求退出而不是自己关掉(qapp, viewer):
+    """看图器不决定自己的去留 —— 嵌在浏览器里是返回，独立开是退出。"""
+    exits = []
+    viewer.exit_view.connect(lambda p: exits.append(p))
+    press(viewer, Qt.Key_Escape)
+    assert exits == [viewer.current]
+    assert viewer.isVisible(), "不该自作主张关掉自己"
+
+
+def test_全屏时Esc先退全屏(qapp, viewer):
+    viewer.toggle_fullscreen()
+    pump(qapp, 500)
+    exits = []
+    viewer.exit_view.connect(lambda p: exits.append(p))
+    press(viewer, Qt.Key_Escape)
+    pump(qapp, 500)
+    assert not exits, "第一次 Esc 应该只退全屏"
+    assert not viewer.is_fullscreen()
 
 
 def test_全屏切换(qapp, viewer):
     viewer.toggle_fullscreen()
     pump(qapp, 300)
+    assert viewer.is_fullscreen()
     viewer.toggle_fullscreen()
     pump(qapp, 300)
-    assert not viewer.isFullScreen()
+    assert not viewer.is_fullscreen()
 
 
 def test_关闭时发出closed信号(qapp, pics):

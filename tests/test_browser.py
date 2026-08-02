@@ -82,10 +82,23 @@ def test_缩略图尺寸不越界(browser):
 
 
 def test_切目录树可见性(browser):
+    """F9 只收目录树，预览窗格留在原地。"""
+    assert browser._left_splitter.sizes()[0] > 0
     browser._toggle_tree()
-    assert browser._splitter.sizes()[0] == 0
+    assert browser._left_splitter.sizes()[0] == 0
     browser._toggle_tree()
-    assert browser._splitter.sizes()[0] > 0
+    assert browser._left_splitter.sizes()[0] > 0
+
+
+def test_预览窗格可见性开关(browser):
+    """模拟菜单点击：Qt 先切 checked，再发 triggered 调 _toggle_preview。"""
+    assert browser._preview.isVisible()
+    browser._preview_act.setChecked(False)
+    browser._toggle_preview()
+    assert not browser._preview.isVisible()
+    browser._preview_act.setChecked(True)
+    browser._toggle_preview()
+    assert browser._preview.isVisible()
 
 
 # ------------------------------------------------------------------ 文件操作
@@ -184,14 +197,97 @@ def test_粘贴到当前目录不自我覆盖(qapp, browser, workdir):
     assert src.read_bytes() == before
 
 
-# ------------------------------------------------------------------ 与看图器联动
+# ------------------------------------------------------------------ 看图模式
+def test_看图不开新窗口(qapp, browser):
+    """核心要求：看图是同一个窗口里换一页，不是弹窗。"""
+    from PySide6.QtWidgets import QApplication
+
+    def visible_windows():
+        return [w for w in QApplication.topLevelWidgets()
+                if w.isWindow() and w.isVisible()]
+
+    before = len(visible_windows())
+    v = browser._open_viewer(0)
+    pump(qapp, 1000)
+    assert len(visible_windows()) == before, "弹出了新窗口"
+    assert browser._stack.currentWidget() is v
+    assert not v.isWindow(), "看图页必须是子控件，不是独立窗口"
+
+
+def test_进出看图模式切换页面(qapp, browser):
+    assert not browser.is_viewing()
+    v = browser._open_viewer(0)
+    assert browser.is_viewing()
+    assert browser._stack.currentWidget() is v
+
+    browser._on_exit_view(None)
+    pump(qapp, 500)
+    assert not browser.is_viewing()
+    assert browser._stack.currentWidget() is browser._splitter
+
+
+def test_看图时隐藏状态栏(qapp, browser):
+    assert browser._status.isVisible()
+    browser._open_viewer(0)
+    pump(qapp, 300)
+    assert not browser._status.isVisible(), "看图时信息走 OSD，状态栏是多余的"
+    browser._on_exit_view(None)
+    pump(qapp, 300)
+    assert browser._status.isVisible()
+
+
+def test_看图时禁用浏览器快捷键(qapp, browser):
+    """Del / Enter / F5 等 WindowShortcut 会抢在 Viewer.keyPressEvent 之前触发。"""
+    assert all(a.isEnabled() for a in browser._browse_actions)
+    browser._open_viewer(0)
+    assert all(not a.isEnabled() for a in browser._browse_actions)
+    browser._on_exit_view(None)
+    pump(qapp, 300)
+    assert all(a.isEnabled() for a in browser._browse_actions)
+
+
+def test_看图时空格翻页不被抢走(qapp, browser):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    v = browser._open_viewer(0)
+    pump(qapp, 4000, lambda: v._image is not None)
+    QApplication.sendEvent(v, QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Space, Qt.NoModifier))
+    pump(qapp, 1500)
+    assert v._index == 1, "空格被浏览器快捷键吃掉了"
+
+
+def test_全屏看图时收起菜单栏(qapp, browser):
+    v = browser._open_viewer(0)
+    pump(qapp, 500)
+    v.toggle_fullscreen()
+    pump(qapp, 800)
+    assert browser.isFullScreen()
+    assert not browser.menuBar().isVisible(), "全屏时屏幕上只该剩那张图"
+
+    v.toggle_fullscreen()
+    pump(qapp, 800)
+    assert browser.menuBar().isVisible()
+
+
+def test_退出看图时一并退出全屏(qapp, browser):
+    v = browser._open_viewer(0)
+    pump(qapp, 500)
+    v.toggle_fullscreen()
+    pump(qapp, 800)
+    browser._on_exit_view(None)
+    pump(qapp, 800)
+    assert not browser.isFullScreen(), "回到浏览页却还全屏着，菜单栏都没了"
+    assert browser.menuBar().isVisible()
+
+
 def test_打开看图器时暂停缩略图池(qapp, browser):
     assert not browser._loader._paused
-    v = browser._open_viewer(0)
+    browser._open_viewer(0)
     assert browser._loader._paused, "看图时缩略图仍在抢 CPU"
-    v.close()
+    browser._on_exit_view(None)
     pump(qapp, 500)
-    assert not browser._loader._paused, "看图器关了没恢复缩略图加载"
+    assert not browser._loader._paused, "退出看图后没恢复缩略图加载"
 
 
 def test_看图器删除文件同步到列表(qapp, browser, yes):
@@ -201,16 +297,26 @@ def test_看图器删除文件同步到列表(qapp, browser, yes):
     v.delete_current()
     pump(qapp, 500)
     assert doomed not in browser._model.paths()
-    v.close()
+    browser._on_exit_view(None)
 
 
-def test_关闭看图器后选中回到当前图(qapp, browser):
+def test_退出看图后选中回到当前图(qapp, browser):
     v = browser._open_viewer(2)
     pump(qapp, 4000, lambda: v._image is not None)
     expected = v.current
-    v.close()
+    v.exit_view.emit(v.current)      # 等价于按 Esc
     pump(qapp, 500)
     assert browser._model.path_at(browser._view.currentIndex()) == expected
+
+
+def test_重复打开看图器不泄漏页面(qapp, browser):
+    n = browser._stack.count()
+    for i in range(3):
+        browser._open_viewer(i)
+        pump(qapp, 300)
+    browser._on_exit_view(None)
+    pump(qapp, 500)
+    assert browser._stack.count() == n, "旧的看图页没被拆掉"
 
 
 def test_空目录不崩溃(qapp, tmp_path):
@@ -222,3 +328,58 @@ def test_空目录不崩溃(qapp, tmp_path):
     assert b._model.rowCount() == 0
     b._update_status()
     b.close()
+
+
+# ------------------------------------------------------------------ 预览窗格
+def test_选中项出现在预览窗格(qapp, browser):
+    # 注意别拿 paths()[0]：自然排序下 broken.jpg 排在 IMG_xxx 前面，
+    # 那是夹具故意放的损坏文件，永远解不出图。这里要一张真能解的。
+    target = next(p for p in browser._model.paths() if p.name != "broken.jpg")
+    browser._view.setCurrentIndex(browser._model.index(browser._model.index_of(target), 0))
+    assert browser._preview._path == target, "选中项应进预览"
+    assert pump(qapp, 8000, lambda: browser._preview._img is not None)
+    assert not browser._preview._error
+
+
+def test_切换选中项时预览跟着换(qapp, browser):
+    first, second = browser._model.paths()[0], browser._model.paths()[1]
+    browser._view.setCurrentIndex(browser._model.index(1, 0))
+    assert browser._preview._path == second
+    pump(qapp, 8000, lambda: browser._preview._img is not None)
+    browser._view.setCurrentIndex(browser._model.index(0, 0))
+    assert browser._preview._path == first
+
+
+def test_损坏文件预览标记错误而非崩溃(qapp, browser, workdir):
+    browser._preview.show_path(workdir / "broken.jpg")
+    assert pump(qapp, 6000, lambda: browser._preview._error)
+    browser._preview.repaint()          # 错误态也必须能画出来
+
+
+def test_空目录预览清空(qapp, tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    b = Browser(empty)
+    b.show()
+    pump(qapp, 500)
+    assert b._preview._path is None
+    assert b._preview.isVisible(), "预览窗格本身还在，只是显示占位提示"
+    b.close()
+
+
+def test_看图时预览暂停_退出后恢复(qapp, browser):
+    browser._open_viewer(0)
+    pump(qapp, 500)
+    pv = browser._preview
+    assert pv._paused, "看图时预览应处于暂停态"
+    assert pv._img is None, "暂停应作废在飞解码"
+    # 关键回归：切页会触发 resize，暂停态下不许被防抖定时器重新拉起来
+    assert not pv._resize_timer.isActive()
+    assert pump(qapp, 2000, lambda: pv._pool.activeThreadCount() == 0), \
+        "看图时不该还有预览解码线程在跑"
+
+    browser._on_exit_view(None)
+    pump(qapp, 500)
+    assert not pv._paused
+    assert pv._path == browser._current_path(), "退出看图后预览应回到选中项"
+    assert pump(qapp, 8000, lambda: pv._img is not None or pv._error), "退出后应恢复解码"
