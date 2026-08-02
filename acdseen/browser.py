@@ -355,7 +355,8 @@ class Browser(QMainWindow):
 
         m_show = mb.addMenu("看图(&I)")
         self._act("查看选中图片", "Return", self._open_current, m_show)
-        self._act("从第一张开始幻灯片", "F5" if False else "Ctrl+S", self._start_slideshow, m_show)
+        # 包一层 lambda：triggered 会塞个 checked 布尔进来，直接连会被当成起始张号
+        self._act("从第一张开始幻灯片", "Ctrl+S", lambda: self._start_slideshow(0), m_show)
 
         m_help = mb.addMenu("帮助(&H)")
         self._act("快捷键", "F1", self._show_help, m_help, browse_only=False)
@@ -481,10 +482,11 @@ class Browser(QMainWindow):
         if idx.isValid():
             self._open_index(idx)
 
-    def _start_slideshow(self) -> None:
+    def _start_slideshow(self, start: int = 0) -> None:
+        """从第 start 张开始全屏幻灯演示。"""
         if self._model.rowCount() == 0:
             return
-        v = self._open_viewer(0)
+        v = self._open_viewer(max(0, min(start, self._model.rowCount() - 1)))
         if v:
             self.showFullScreen()
             v.toggle_slideshow()
@@ -695,8 +697,22 @@ class Browser(QMainWindow):
 
     # ------------------------------------------------------------- 杂项
     def _file_context_menu(self, pos) -> None:
+        m = self._build_file_menu(pos)
+        m.exec(self._view.viewport().mapToGlobal(pos))
+
+    def _build_file_menu(self, pos) -> QMenu:
+        """构造缩略图右键菜单。和 exec 分开，测试才能不弹模态窗就检查内容。"""
+        # 作用于右键点中的那一项。Qt 右键也会移动当前项，两者通常一致，
+        # 但点在空白处时 indexAt 无效，那就退回当前项。
+        idx = self._view.indexAt(pos)
+        if not idx.isValid():
+            idx = self._view.currentIndex()
+
         m = QMenu(self)
         m.addAction("查看\tEnter", self._open_current)
+        row = idx.row()
+        act = m.addAction("幻灯演示", lambda: self._start_slideshow(row))
+        act.setEnabled(idx.isValid())
         m.addSeparator()
         m.addAction("重命名\tF2", self._rename)
         m.addAction("删除\tDel", self._delete)
@@ -705,7 +721,7 @@ class Browser(QMainWindow):
         m.addAction("剪切\tCtrl+X", self._cut)
         m.addAction("复制到…", lambda: self._transfer("copy"))
         m.addAction("移动到…", lambda: self._transfer("move"))
-        m.exec(self._view.viewport().mapToGlobal(pos))
+        return m
 
     def eventFilter(self, obj, ev) -> bool:
         if obj is self._view and ev.type() == QEvent.KeyPress:
@@ -785,6 +801,7 @@ HELP_TEXT = """\
   F5                刷新
   F9                显示 / 隐藏目录树
   Ctrl+S            从第一张开始全屏幻灯片
+  右键 → 幻灯演示   从右键点中的那张开始全屏幻灯片
 
 【预览窗格】
   菜单「查看 → 预览窗格」显示 / 隐藏选中图片的预览
@@ -799,7 +816,9 @@ HELP_TEXT = """\
   W                 适应宽度
   F / Enter / F11   全屏切换
   S                 幻灯片开关
-  [ / ]             幻灯片间隔 减 / 加
+  R                 乱序开关
+  D                 设定幻灯片间隔（任意秒数，0 = 尽快）
+  [ / ]             幻灯片间隔 减 / 加（档位 0 / 0.5 / 1 / 2 / 3 / 5 / 10 / 15 / 30 / 60 秒）
   I                 显示 / 隐藏信息条
   Del               删除当前图片
   Esc               退出全屏 / 返回浏览

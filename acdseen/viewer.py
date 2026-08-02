@@ -6,18 +6,29 @@
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QImage, QKeySequence,
                            QPainter, QPixmap)
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QWidget
+from PySide6.QtWidgets import (QApplication, QInputDialog, QMenu, QMessageBox,
+                               QWidget)
 
 from . import config
 from .loader import ImageLoader
 from .util import format_size, human_dims
 
-FIT_WINDOW, FIT_WIDTH, FIT_ONE_TO_ONE, FIT_FREE = range(4)
+# FIT_WINDOW 是原版行为：小图不放大，一张 200px 的图在全屏下还是 200px。
+# FIT_FILL 是"真的铺满"：小图也放大到贴住显示框的短边。
+FIT_WINDOW, FIT_WIDTH, FIT_ONE_TO_ONE, FIT_FREE, FIT_FILL = range(5)
+
+FIT_NAMES = {
+    FIT_WINDOW: "适应窗口",
+    FIT_WIDTH: "适应宽度",
+    FIT_ONE_TO_ONE: "实际大小 1:1",
+    FIT_FILL: "缩放到显示框",
+}
 
 
 class Viewer(QWidget):
@@ -65,7 +76,9 @@ class Viewer(QWidget):
 
         self._slideshow = QTimer(self)
         self._slideshow.timeout.connect(self._slideshow_tick)
-        self._slideshow_delay = config.DEFAULT_SLIDESHOW_DELAY
+        self._slideshow_delay: float = config.DEFAULT_SLIDESHOW_DELAY
+        self._shuffle = False
+        self._original_files = list(files)   # 关掉乱序时按这个还原
 
         self._loader = ImageLoader(self)
         self._loader.preview_ready.connect(self._on_preview)
@@ -118,6 +131,11 @@ class Viewer(QWidget):
         self._loader.read_ahead(neighbours)
 
     def next_image(self) -> None:
+        # 乱序跑完一轮就重洗，否则第二轮还是同一个顺序，等于没乱
+        if self._shuffle and self._index + 1 >= len(self._files):
+            self._reshuffle()
+            self._goto(0)
+            return
         self._goto(self._index + 1)
 
     def prev_image(self) -> None:
@@ -171,6 +189,9 @@ class Viewer(QWidget):
         if self._fit_mode == FIT_WINDOW:
             s = min(vw / iw, vh / ih)
             return min(s, 1.0)      # 小图不放大 —— 原版行为
+        if self._fit_mode == FIT_FILL:
+            # 该放大就放大：整张图贴住显示框，长宽比不变
+            return min(vw / iw, vh / ih)
         if self._fit_mode == FIT_WIDTH:
             return vw / iw
         return 1.0
@@ -213,30 +234,91 @@ class Viewer(QWidget):
         self._scaled_for = None
 
     # ------------------------------------------------------------- 幻灯片
+    @staticmethod
+    def format_delay(delay: float) -> str:
+        if delay <= 0:
+            return "尽快"
+        return f"{delay:g} 秒"
+
+    def _interval_ms(self) -> int:
+        """0 秒不能真给 QTimer 传 0 —— 那是空转烧 CPU。给个最小节拍，
+        配合 _slideshow_tick 里"没解完就不翻"的守卫，实际就是解完即翻。"""
+        if self._slideshow_delay <= 0:
+            return config.SLIDESHOW_ASAP_MS
+        return int(self._slideshow_delay * 1000)
+
     def toggle_slideshow(self) -> None:
         if self._slideshow.isActive():
             self._slideshow.stop()
             self._flash("幻灯片：停止")
         else:
-            self._slideshow.start(self._slideshow_delay * 1000)
-            self._flash(f"幻灯片：{self._slideshow_delay} 秒/张")
+            self._slideshow.start(self._interval_ms())
+            order = "，乱序" if self._shuffle else ""
+            self._flash(f"幻灯片：{self.format_delay(self._slideshow_delay)}/张{order}")
         self.update()
 
     def _slideshow_tick(self) -> None:
-        # 上一张还没解完就不要往前跑，否则观感是跳帧
+        # 上一张还没解完就不要往前跑，否则观感是跳帧。
+        # 0 秒档全靠这一条踩刹车。
         if self._is_preview and self._image is None:
             return
         self.next_image()
 
+    def set_delay(self, delay: float) -> None:
+        """设成任意秒数，0 表示尽快。"""
+        self._slideshow_delay = max(config.SLIDESHOW_DELAY_MIN,
+                                    min(config.SLIDESHOW_DELAY_MAX, float(delay)))
+        if self._slideshow.isActive():
+            self._slideshow.start(self._interval_ms())
+        self._flash(f"幻灯片间隔：{self.format_delay(self._slideshow_delay)}")
+        self.update()
+
     def _cycle_delay(self, direction: int) -> None:
         delays = config.SLIDESHOW_DELAYS
-        # 当前值可能不在档位表里（配置被改过），退到最接近的那一档
+        # 当前值可能不在档位表里（用对话框设过任意值），退到最接近的那一档
         i = min(range(len(delays)), key=lambda j: abs(delays[j] - self._slideshow_delay))
-        i = max(0, min(len(delays) - 1, i + direction))
-        self._slideshow_delay = delays[i]
-        if self._slideshow.isActive():
-            self._slideshow.start(self._slideshow_delay * 1000)
-        self._flash(f"幻灯片间隔：{self._slideshow_delay} 秒")
+        # 已经落在某一档上才移动，否则先归位到最接近的那档
+        if abs(delays[i] - self._slideshow_delay) < 1e-9:
+            i = max(0, min(len(delays) - 1, i + direction))
+        self.set_delay(delays[i])
+
+    def ask_delay(self) -> None:
+        """弹对话框设任意间隔。0 = 尽快。"""
+        value, ok = QInputDialog.getDouble(
+            self, "幻灯片间隔", "每张停留秒数（0 = 尽快）：",
+            float(self._slideshow_delay),
+            config.SLIDESHOW_DELAY_MIN, config.SLIDESHOW_DELAY_MAX, 1)
+        if ok:
+            self.set_delay(value)
+
+    # ------------------------------------------------------------- 乱序
+    def set_shuffle(self, on: bool) -> None:
+        """乱序直接洗 self._files 本身，导航 / 预读 / 删除全都不用改。
+        当前这张永远留在原地，切换顺序不会把你正在看的图换掉。"""
+        on = bool(on)
+        if on == self._shuffle:
+            return
+        self._shuffle = on
+        cur = self.current
+        if on:
+            rest = [p for p in self._files if p != cur]
+            random.shuffle(rest)
+            self._files = ([cur] if cur is not None else []) + rest
+        else:
+            # 还原原始顺序，但只留还在列表里的 —— 删掉的不能复活
+            alive = set(self._files)
+            self._files = [p for p in self._original_files if p in alive]
+        self._index = self._files.index(cur) if cur in self._files else 0
+        self._queue_read_ahead()
+        self._flash("乱序：开" if on else "乱序：关")
+        self.update()
+
+    def toggle_shuffle(self) -> None:
+        self.set_shuffle(not self._shuffle)
+
+    def _reshuffle(self) -> None:
+        """洗出新的一轮。放在跑完一轮之后，免得每轮都是同一个"随机"顺序。"""
+        random.shuffle(self._files)
 
     # ------------------------------------------------------------- 文件操作
     def delete_current(self) -> None:
@@ -310,7 +392,9 @@ class Viewer(QWidget):
             if self._is_preview and self._image is not None:
                 info.append("· 精修中")
             if self._slideshow.isActive():
-                info.append(f"▶ {self._slideshow_delay}s")
+                info.append(f"▶ {self.format_delay(self._slideshow_delay)}")
+            if self._shuffle:
+                info.append("⤨ 乱序")
             lines.append("   ".join(info))
 
         if self._transient:
@@ -386,6 +470,10 @@ class Viewer(QWidget):
             self.toggle_fullscreen()
         elif k == Qt.Key_S:
             self.toggle_slideshow()
+        elif k == Qt.Key_R:
+            self.toggle_shuffle()
+        elif k == Qt.Key_D:
+            self.ask_delay()
         elif k == Qt.Key_BracketRight:
             self._cycle_delay(+1)
         elif k == Qt.Key_BracketLeft:
@@ -465,6 +553,10 @@ class Viewer(QWidget):
         m.addSeparator()
         act = m.addAction("幻灯片\tS", self.toggle_slideshow)
         act.setCheckable(True); act.setChecked(self._slideshow.isActive())
+        act = m.addAction("乱序\tR", self.toggle_shuffle)
+        act.setCheckable(True); act.setChecked(self._shuffle)
+        m.addAction(f"幻灯间隔…\tD（当前 {self.format_delay(self._slideshow_delay)}）",
+                    self.ask_delay)
         m.addSeparator()
         m.addAction("删除\tDel", self.delete_current)
         m.addAction("返回浏览\tEsc", lambda: self.exit_view.emit(self.current))
