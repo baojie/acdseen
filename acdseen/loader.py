@@ -54,10 +54,22 @@ def warmup() -> None:
             _pil_ready = True
 
 
+# PIL 解码整条串行。warmup() 只挡住了插件注册表的 lazy-import，挡不住
+# PILImage.open() 内部逐个插件试探的那一段 —— 损坏文件会把所有插件都试一遍，
+# 多个工作线程同时试探照样段错误（在 preview 面板不止一个时必现）。
+# 这是 Qt 认不出的格式才走的冷路径，串行的代价可以忽略。
+_pil_decode_lock = threading.Lock()
+
+
 def _read_with_pil(path: Path, max_edge: int | None) -> QImage | None:
     if not HAVE_PIL:
         return None
     warmup()
+    with _pil_decode_lock:
+        return _read_with_pil_locked(path, max_edge)
+
+
+def _read_with_pil_locked(path: Path, max_edge: int | None) -> QImage | None:
     try:
         with PILImage.open(path) as im:
             has_alpha = im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info
