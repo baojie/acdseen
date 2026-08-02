@@ -59,6 +59,7 @@ class Viewer(QWidget):
         self._error: str | None = None
 
         self._fit_mode = FIT_WINDOW
+        self._base_fit = FIT_WINDOW   # 手动缩放后翻页要回到的模式
         self._scale = 1.0
         self._offset = QPoint(0, 0)       # 图像相对视口中心的平移
         self._drag_from: QPoint | None = None
@@ -175,7 +176,7 @@ class Viewer(QWidget):
             if not keep_view:
                 self._offset = QPoint(0, 0)
                 if self._fit_mode == FIT_FREE:
-                    self._fit_mode = FIT_WINDOW
+                    self._fit_mode = self._base_fit
         self.update()
 
     # ------------------------------------------------------------- 缩放
@@ -203,10 +204,13 @@ class Viewer(QWidget):
 
     def _set_fit(self, mode: int) -> None:
         self._fit_mode = mode
+        if mode != FIT_FREE:
+            # 记住这个模式：翻到下一张时回到它，而不是一律退回适应窗口。
+            # 幻灯放映时选了"缩放到显示框"，就该每张都铺满。
+            self._base_fit = mode
         self._offset = QPoint(0, 0)
         self._invalidate_scaled()
-        names = {FIT_WINDOW: "适应窗口", FIT_WIDTH: "适应宽度", FIT_ONE_TO_ONE: "实际大小 1:1"}
-        self._flash(names.get(mode, ""))
+        self._flash(FIT_NAMES.get(mode, ""))
         self.update()
 
     def zoom_by(self, direction: int, anchor: QPoint | None = None) -> None:
@@ -364,7 +368,10 @@ class Viewer(QWidget):
             # 缩小时预先重采样一次并缓存，之后每帧只是 blit
             key = (round(scale, 4), iw, ih)
             if self._scaled_for != key:
-                mode = Qt.SmoothTransformation if scale < 1.0 else Qt.FastTransformation
+                # 缩小、以及 2 倍以内的放大都用平滑插值 —— "缩放到显示框"
+                # 基本都落在这个区间，用最近邻会糊成马赛克。
+                # 再往上是在看像素，最近邻反而更快也更该保留原样。
+                mode = Qt.FastTransformation if scale > 2.0 else Qt.SmoothTransformation
                 if abs(scale - 1.0) < 1e-6:
                     self._scaled = self._pixmap
                 else:
@@ -466,6 +473,8 @@ class Viewer(QWidget):
             self._set_fit(FIT_ONE_TO_ONE)
         elif k == Qt.Key_W:
             self._set_fit(FIT_WIDTH)
+        elif k == Qt.Key_Z:
+            self._set_fit(FIT_FILL)
         elif k in (Qt.Key_F, Qt.Key_Return, Qt.Key_Enter, Qt.Key_F11):
             self.toggle_fullscreen()
         elif k == Qt.Key_S:
