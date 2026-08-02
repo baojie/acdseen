@@ -21,9 +21,13 @@ from .viewer import Viewer
 
 class ViewHostMixin:
     def _open_index(self, index: QModelIndex) -> None:
-        path = self._model.path_at(index)
-        if path:
-            self._open_viewer(self._model.index_of(path))
+        """双击 / 回车。点在 ".." 上是回上级，不是看图。"""
+        if self._model.is_parent_row(index):
+            self._go_parent()
+            return
+        row = self._model.image_index(index)
+        if row >= 0:
+            self._open_viewer(row)
 
     def _open_current(self) -> None:
         idx = self._view.currentIndex()
@@ -31,10 +35,12 @@ class ViewHostMixin:
             self._open_index(idx)
 
     def _start_slideshow(self, start: int = 0) -> None:
-        """从第 start 张开始全屏幻灯演示。"""
-        if self._model.rowCount() == 0:
+        """从第 start 张开始全屏幻灯演示。start 是图片下标，不是视图行号 ——
+        有 ".." 行时两者差 1，用错的话每次都会从第二张开始。"""
+        n = self._model.image_count()
+        if n == 0:
             return
-        v = self._open_viewer(max(0, min(start, self._model.rowCount() - 1)))
+        v = self._open_viewer(max(0, min(start, n - 1)))
         if v:
             self.showFullScreen()
             v.toggle_slideshow()

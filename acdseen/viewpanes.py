@@ -15,8 +15,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import (QAbstractItemView, QHeaderView, QListView,
-                               QStackedWidget, QTreeView)
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHeaderView,
+                               QListView, QStackedWidget, QTreeView, QVBoxLayout,
+                               QWidget)
 
 from . import config
 from .thumbmodel import COL_NAME, COLUMNS, ThumbDelegate, ThumbModel
@@ -72,10 +73,59 @@ class ViewPanesMixin:
         # 光连 currentChanged 不够：框选一片时当前项不变，"已选 N" 就永远不刷新
         sel.selectionChanged.connect(self._update_status)
 
+        # 路径栏：原版右上角那个显示当前目录、右端带下拉箭头的凹陷框
+        self._path_bar = QComboBox()
+        self._path_bar.setEditable(True)
+        self._path_bar.setInsertPolicy(QComboBox.NoInsert)
+        self._path_bar.lineEdit().returnPressed.connect(self._on_path_entered)
+        self._path_bar.activated.connect(self._on_path_picked)
+
         self._view_stack = QStackedWidget()
         self._view_stack.addWidget(self._icon_view)
         self._view_stack.addWidget(self._list_view)
+
+        self._right_pane = QWidget()
+        lay = QVBoxLayout(self._right_pane)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(1)
+        lay.addWidget(self._path_bar)
+        lay.addWidget(self._view_stack, 1)
         self._apply_view_mode()
+
+    # ------------------------------------------------------------- 路径栏
+    def _sync_path_bar(self, directory) -> None:
+        """把路径栏刷成当前目录，下拉里列出各级祖先。
+
+        必须挡住信号：往 QComboBox 里塞条目会触发 activated，
+        不挡就会从 set_directory 里递归回 set_directory。
+        """
+        bar = self._path_bar
+        bar.blockSignals(True)
+        bar.clear()
+        chain, p = [], directory
+        while True:
+            chain.append(p)
+            if p.parent == p:
+                break
+            p = p.parent
+        bar.addItems([str(x) for x in chain])
+        bar.setCurrentIndex(0)
+        bar.setEditText(str(directory))
+        bar.blockSignals(False)
+
+    def _on_path_entered(self) -> None:
+        from pathlib import Path
+        text = self._path_bar.currentText().strip()
+        if text:
+            self.set_directory(Path(text))
+        self._view.setFocus(Qt.OtherFocusReason)
+
+    def _on_path_picked(self, i: int) -> None:
+        from pathlib import Path
+        text = self._path_bar.itemText(i)
+        if text:
+            self.set_directory(Path(text))
+        self._view.setFocus(Qt.OtherFocusReason)
 
     @property
     def _view(self) -> QAbstractItemView:

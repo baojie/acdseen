@@ -36,6 +36,7 @@ class ThumbModel(QAbstractTableModel):
 
     def __init__(self, loader: ThumbnailLoader, parent=None):
         super().__init__(parent)
+        self._parent_dir: Path | None = None   # 有值时第 0 行是 ".."
         self._paths: list[Path] = []
         self._thumbs: dict[Path, QIcon] = {}
         self._requested: set[Path] = set()
@@ -43,27 +44,53 @@ class ThumbModel(QAbstractTableModel):
         self._loader = loader
         self._loader.ready.connect(self._on_thumb)
         self._placeholder = self._make_placeholder(self._edge)
+        self._parent_pm: QIcon | None = None
 
     # -- 数据 --
-    def set_paths(self, paths: list[Path]) -> None:
+    # 视图里的行 = [".." 导航行（可选）] + 图片行。
+    # 对外一律用"视图行号"，内部 _paths 只装图片 —— 两套编号靠 _offset 换算，
+    # 别让哨兵路径混进 _paths，否则删除 / 幻灯片 / 预览全要额外判空。
+    def set_paths(self, paths: list[Path], parent_dir: Path | None = None) -> None:
         self.beginResetModel()
         self._paths = paths
+        self._parent_dir = parent_dir
         self._thumbs.clear()
         self._requested.clear()
         self.endResetModel()
+
+    def _offset(self) -> int:
+        return 1 if self._parent_dir is not None else 0
+
+    def parent_dir(self) -> Path | None:
+        return self._parent_dir
+
+    def is_parent_row(self, index: QModelIndex) -> bool:
+        return bool(index.isValid() and self._offset() and index.row() == 0)
+
+    def image_index(self, index: QModelIndex) -> int:
+        """视图行 → _paths 里的下标。导航行或越界返回 -1。"""
+        if not index.isValid():
+            return -1
+        row = index.row() - self._offset()
+        return row if 0 <= row < len(self._paths) else -1
+
+    def first_image_row(self) -> int:
+        """第一张图在视图里的行号 —— 切目录后该选中的就是它，不是 ".."。"""
+        return self._offset() if self._paths else -1
 
     def paths(self) -> list[Path]:
         return self._paths
 
     def path_at(self, index: QModelIndex) -> Path | None:
-        # 只看行号 —— 列表模式下点在哪一列都该拿到同一个文件
-        if index.isValid() and 0 <= index.row() < len(self._paths):
-            return self._paths[index.row()]
-        return None
+        """只看行号 —— 列表模式下点在哪一列都该拿到同一个文件。
+        导航行返回 None：它不是图片，不该进选择集、预览和文件操作。"""
+        row = self.image_index(index)
+        return self._paths[row] if row >= 0 else None
 
     def index_of(self, path: Path) -> int:
+        """返回视图行号（已含导航行的偏移），找不到是 -1。"""
         try:
-            return self._paths.index(path)
+            return self._paths.index(path) + self._offset()
         except ValueError:
             return -1
 
@@ -77,6 +104,7 @@ class ThumbModel(QAbstractTableModel):
             return
         self._edge = edge
         self._placeholder = self._make_placeholder(edge)
+        self._parent_pm = None
         self._thumbs.clear()
         self._requested.clear()
         self._loader.invalidate()
@@ -88,7 +116,11 @@ class ThumbModel(QAbstractTableModel):
 
     # -- QAbstractTableModel --
     def rowCount(self, parent=QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._paths)
+        return 0 if parent.isValid() else len(self._paths) + self._offset()
+
+    def image_count(self) -> int:
+        """图片张数，不含导航行 —— 状态栏要报的是这个。"""
+        return len(self._paths)
 
     def columnCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(COLUMNS)
@@ -100,6 +132,15 @@ class ThumbModel(QAbstractTableModel):
         return None
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
+        if self.is_parent_row(index):
+            if role == Qt.DisplayRole:
+                return ".." if index.column() == COL_NAME else ""
+            if role == Qt.DecorationRole and index.column() == COL_NAME:
+                return self._parent_icon()
+            if role == Qt.ToolTipRole:
+                return f"上级目录：{self._parent_dir}"
+            return None
+
         path = self.path_at(index)
         if path is None:
             return None
@@ -139,6 +180,12 @@ class ThumbModel(QAbstractTableModel):
             return format_mtime(st.st_mtime)
         return ""
 
+    def _parent_icon(self) -> QIcon:
+        if self._parent_pm is None:
+            from .theme import parent_pixmap
+            self._parent_pm = QIcon(parent_pixmap(max(16, min(self._edge, 48))))
+        return self._parent_pm
+
     def _tooltip(self, path: Path) -> str:
         parts = [path.name]
         try:
@@ -161,6 +208,7 @@ class ThumbModel(QAbstractTableModel):
             self._thumbs[path] = self._make_broken(self._edge)
         else:
             self._thumbs[path] = QIcon(QPixmap.fromImage(img))
+        # index_of 返回的已经是视图行号，别再加一次偏移
         idx = self.index(row, COL_NAME)
         self.dataChanged.emit(idx, idx, [Qt.DecorationRole])
 

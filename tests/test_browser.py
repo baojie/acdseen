@@ -23,6 +23,16 @@ def browser(qapp, workdir):
     pump(qapp, 300)
 
 
+def image_index(browser, n: int):
+    """第 n 张图片在视图里的 QModelIndex —— 有 ".." 行时行号要偏移 1。"""
+    m = browser._model
+    return m.index(m.index_of(m.paths()[n]), 0)
+
+
+def select_image(browser, n: int) -> None:
+    browser._view.setCurrentIndex(image_index(browser, n))
+
+
 @pytest.fixture
 def yes(monkeypatch):
     """把确认对话框按成"是"。"""
@@ -31,7 +41,7 @@ def yes(monkeypatch):
 
 
 def test_列出目录里的图(browser, workdir):
-    assert browser._model.rowCount() == len(list_images(workdir))
+    assert browser._model.image_count() == len(list_images(workdir))
 
 
 def test_可见项拿到缩略图(qapp, browser):
@@ -148,7 +158,7 @@ def test_幻灯演示从指定的那张开始(qapp, browser):
 
 
 def test_幻灯演示起始张号越界会夹住(qapp, browser):
-    n = browser._model.rowCount()
+    n = browser._model.image_count()
     browser._start_slideshow(n + 99)
     pump(qapp, 500)
     assert browser._viewer.current == browser._model.paths()[n - 1]
@@ -168,7 +178,7 @@ def test_菜单栏幻灯片仍从第一张开始(qapp, browser):
 
 def test_右键菜单里有幻灯演示(qapp, browser):
     """只构造菜单不 exec —— exec 是模态的，测试里一弹就再也回不来。"""
-    rect = browser._view.visualRect(browser._model.index(1, 0))
+    rect = browser._view.visualRect(image_index(browser, 0))
     m = browser._build_file_menu(rect.center())
     acts = [a.text() for a in m.actions()]
     assert "幻灯演示" in acts
@@ -202,7 +212,7 @@ def test_预览窗格可见性开关(browser):
 def test_重命名(qapp, browser, workdir):
     from PySide6.QtWidgets import QInputDialog
     target = browser._model.paths()[0]
-    browser._view.setCurrentIndex(browser._model.index(0, 0))
+    select_image(browser, 0)
 
     import acdseen.browser as B
     orig = QInputDialog.getText
@@ -220,7 +230,7 @@ def test_重命名到已存在的名字会拒绝(qapp, browser, workdir, monkeyp
     from PySide6.QtWidgets import QInputDialog
     paths = browser._model.paths()
     first, second = paths[0], paths[1]
-    browser._view.setCurrentIndex(browser._model.index(0, 0))
+    select_image(browser, 0)
 
     warned = []
     monkeypatch.setattr(QMessageBox, "warning",
@@ -235,7 +245,7 @@ def test_重命名到已存在的名字会拒绝(qapp, browser, workdir, monkeyp
 
 def test_删除选中(qapp, browser, yes):
     target = browser._model.paths()[0]
-    browser._view.setCurrentIndex(browser._model.index(0, 0))
+    select_image(browser, 0)
     browser._delete()
     pump(qapp, 300)
     assert not target.exists()
@@ -246,7 +256,8 @@ def test_删除多选(qapp, browser, yes):
     sm = browser._view.selectionModel()
     targets = browser._model.paths()[:3]
     for r in range(3):
-        sm.select(browser._model.index(r, 0), QItemSelectionModel.Select)
+        sm.select(browser._model.index(r + browser._model._offset(), 0),
+                  QItemSelectionModel.Select)
     browser._delete()
     pump(qapp, 300)
     assert not any(t.exists() for t in targets)
@@ -254,7 +265,7 @@ def test_删除多选(qapp, browser, yes):
 
 def test_复制粘贴到别的目录(qapp, browser, tmp_path):
     src = browser._model.paths()[0]
-    browser._view.setCurrentIndex(browser._model.index(0, 0))
+    select_image(browser, 0)
     browser._copy()
     assert browser._clipboard[0] == "copy"
 
@@ -422,7 +433,7 @@ def test_空目录不崩溃(qapp, tmp_path):
     b = Browser(empty)
     b.show()
     pump(qapp, 500)
-    assert b._model.rowCount() == 0
+    assert b._model.image_count() == 0
     b._update_status()
     b.close()
 
@@ -440,10 +451,10 @@ def test_选中项出现在预览窗格(qapp, browser):
 
 def test_切换选中项时预览跟着换(qapp, browser):
     first, second = browser._model.paths()[0], browser._model.paths()[1]
-    browser._view.setCurrentIndex(browser._model.index(1, 0))
+    select_image(browser, 1)
     assert browser._preview._path == second
     pump(qapp, 8000, lambda: browser._preview._img is not None)
-    browser._view.setCurrentIndex(browser._model.index(0, 0))
+    select_image(browser, 0)
     assert browser._preview._path == first
 
 
@@ -504,7 +515,7 @@ def test_切到列表模式(qapp, browser):
 
 
 def test_切视图不丢选中项(qapp, browser):
-    browser._view.setCurrentIndex(browser._model.index(2, 0))
+    select_image(browser, 2)
     keep = browser._current_path()
     browser._toggle_view_mode()
     pump(qapp, 500)
@@ -678,16 +689,107 @@ def test_列表模式多选不重复计数(qapp, browser):
     pump(qapp, 300)
     browser._view.selectAll()
     pump(qapp, 300)
-    n = browser._model.rowCount()
-    assert len(browser._view.selectedIndexes()) == n * 5
-    assert len(browser._selected_paths()) == n
+    n = browser._model.image_count()
+    # 全选会把 ".." 那一行也选上，所以 index 数按 rowCount 算
+    assert len(browser._view.selectedIndexes()) == browser._model.rowCount() * 5
+    assert len(browser._selected_paths()) == n, "\"..\" 不是图片，不该进选择集"
     assert f"已选 {n}" in browser._status_left.text()
 
 
 def test_两个视图共享选中项(qapp, browser):
-    browser._view.setCurrentIndex(browser._model.index(2, 0))
+    select_image(browser, 2)
     keep = browser._current_path()
     assert browser._icon_view.selectionModel() is browser._list_view.selectionModel()
     browser._set_view_mode(config.VIEW_LIST)
     pump(qapp, 300)
     assert browser._current_path() == keep
+
+
+# ------------------------------------------------------------------ 上级目录行
+def test_列表第一行是上级目录(browser):
+    m = browser._model
+    idx = m.index(0, 0)
+    assert m.is_parent_row(idx)
+    assert m.data(idx, Qt.DisplayRole) == ".."
+    assert m.parent_dir() == browser._dir.parent
+    assert m.rowCount() == m.image_count() + 1
+
+
+def test_上级目录行不是图片(browser):
+    """它不该混进选择集、预览和文件操作 —— 那些地方全靠 path_at 返回 None 挡住。"""
+    m = browser._model
+    idx = m.index(0, 0)
+    assert m.path_at(idx) is None
+    assert m.image_index(idx) == -1
+    browser._view.setCurrentIndex(idx)
+    assert browser._current_path() is None
+    assert browser._selected_paths() == [], "\"..\" 不该被当成选中的文件"
+
+
+def test_双击上级目录行回上级(qapp, browser, workdir):
+    parent = workdir.parent
+    browser._open_index(browser._model.index(0, 0))
+    pump(qapp, 800)
+    assert browser._dir == parent
+
+
+def test_根目录没有上级目录行(qapp):
+    from pathlib import Path
+    b = Browser(Path("/"))
+    b.show(); pump(qapp, 1200)
+    assert b._model.parent_dir() is None
+    assert not b._model.is_parent_row(b._model.index(0, 0))
+    b.close(); pump(qapp, 300)
+
+
+def test_切目录后选中第一张图而不是上级行(qapp, browser):
+    m = browser._model
+    assert m.first_image_row() == 1
+    assert not m.is_parent_row(browser._view.currentIndex())
+    assert browser._current_path() == m.paths()[0]
+
+
+def test_状态栏不把上级行算成图片(browser):
+    n = len(browser._model.paths())
+    assert f"{n} 张图片" in browser._status_left.text()
+
+
+def test_上级目录行的右键菜单只有回上级(browser):
+    m = browser._build_file_menu(browser._view.visualRect(
+        browser._model.index(0, 0)).center())
+    acts = [a.text() for a in m.actions()]
+    assert acts == ["回到上级目录\tBackspace"]
+    m.deleteLater()
+
+
+# ------------------------------------------------------------------ 路径栏
+def test_路径栏显示当前目录(browser, workdir):
+    assert browser._path_bar.currentText() == str(workdir)
+
+
+def test_路径栏下拉列出各级祖先(browser, workdir):
+    items = [browser._path_bar.itemText(i)
+             for i in range(browser._path_bar.count())]
+    assert items[0] == str(workdir)
+    assert items[-1] == "/"
+    assert str(workdir.parent) in items
+
+
+def test_路径栏输入路径可切目录(qapp, browser, workdir):
+    target = workdir.parent
+    browser._path_bar.setEditText(str(target))
+    browser._on_path_entered()
+    pump(qapp, 800)
+    assert browser._dir == target
+
+
+def test_路径栏切目录不会递归(qapp, browser, workdir):
+    """回归：往 QComboBox 里塞条目会触发 activated，不挡信号就会
+    从 set_directory 递归回 set_directory。"""
+    calls = []
+    orig = browser.set_directory
+    browser.set_directory = lambda d: (calls.append(d), orig(d))[1]
+    browser._on_path_picked(1)          # 选上级
+    pump(qapp, 800)
+    assert len(calls) == 1, f"set_directory 被重入了：{calls}"
+    browser.set_directory = orig

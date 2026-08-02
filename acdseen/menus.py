@@ -124,10 +124,15 @@ class MenuMixin:
             idx = self._view.currentIndex()
 
         m = QMenu(self)
+        if self._model.is_parent_row(idx):
+            m.addAction("回到上级目录\tBackspace", self._go_parent)
+            return m
+
         m.addAction("查看\tEnter", self._open_current)
-        row = idx.row()
-        act = m.addAction("幻灯演示", lambda: self._start_slideshow(row))
-        act.setEnabled(idx.isValid())
+        # 用图片下标，不是视图行号 —— 有 ".." 行时两者差 1
+        row = self._model.image_index(idx)
+        act = m.addAction("幻灯演示", lambda: self._start_slideshow(max(0, row)))
+        act.setEnabled(row >= 0)
         m.addSeparator()
         m.addAction("重命名\tF2", self._rename)
         m.addAction("删除\tDel", self._delete)

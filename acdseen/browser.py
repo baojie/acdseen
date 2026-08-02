@@ -92,7 +92,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._left_splitter.setSizes([400, 220])
 
         self._splitter.addWidget(self._left_splitter)
-        self._splitter.addWidget(self._view_stack)
+        self._splitter.addWidget(self._right_pane)
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setSizes([260, 900])
@@ -123,10 +123,14 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._loader.invalidate()
         files = list_images(directory, self._sort_key, self._sort_reverse,
                             self._sort_seed)
-        self._model.set_paths(files)
+        # 到根了就没有上级可去，那一行也不该出现
+        parent = directory.parent if directory.parent != directory else None
+        self._model.set_paths(files, parent)
+        self._sync_path_bar(directory)
         self.setWindowTitle(f"{directory} — {config.APP_NAME}")
-        if files:
-            self._view.setCurrentIndex(self._model.index(0, 0))
+        row = self._model.first_image_row()
+        if row >= 0:
+            self._view.setCurrentIndex(self._model.index(row, 0))
         self._preview.show_path(self._current_path())   # 空目录时清空预览
         self._update_status()
 
@@ -184,6 +188,11 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._preview_act.setChecked(visible)
         self._preview.setVisible(visible)
 
+    def _go_parent(self) -> None:
+        up = self._model.parent_dir()
+        if up is not None:
+            self.set_directory(up)
+
     def _on_selection_changed(self, *_) -> None:
         self._preview.show_path(self._current_path())
 
@@ -221,7 +230,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
                 self._open_current()
                 return True
             if ev.key() == Qt.Key_Backspace:
-                self.set_directory(self._dir.parent)
+                self._go_parent()
                 return True
         return super().eventFilter(obj, ev)
 
@@ -242,9 +251,11 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
 
     # ------------------------------------------------------------- 状态栏
     def _update_status(self, *_) -> None:
-        total = self._model.rowCount()
-        # 按行数，不是 index 数 —— 列表模式下一行有 5 个 index
-        sel = len({i.row() for i in self._view.selectionModel().selectedIndexes()})
+        total = self._model.image_count()      # 不含 ".." 那一行
+        # 按行数，不是 index 数（列表模式下一行有 5 个 index），
+        # 并且要排掉 ".." 那一行 —— 它不是图片
+        sel = len({i.row() for i in self._view.selectionModel().selectedIndexes()
+                   if self._model.path_at(i) is not None})
         left = f"{total} 张图片"
         if sel > 1:
             left += f"，已选 {sel}"

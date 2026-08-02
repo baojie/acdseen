@@ -221,6 +221,33 @@ QLineEdit {{
     border-bottom-color: {LIGHT};
     padding: 2px;
 }}
+/* 路径栏：凹陷输入框 + 右端一个凸起的下拉按钮 */
+QComboBox {{
+    background: {WINDOW};
+    border: 2px solid {FACE};
+    border-top-color: {SHADOW};
+    border-left-color: {SHADOW};
+    border-right-color: {LIGHT};
+    border-bottom-color: {LIGHT};
+    padding: 1px 2px;
+}}
+QComboBox::drop-down {{
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 16px;
+    background: {FACE};
+    border: 1px solid {FACE};
+    border-top-color: {LIGHT};
+    border-left-color: {LIGHT};
+    border-right-color: {DKSHADOW};
+    border-bottom-color: {DKSHADOW};
+}}
+QComboBox QAbstractItemView {{
+    background: {WINDOW};
+    border: 1px solid {DKSHADOW};
+    selection-background-color: {HILIGHT};
+    selection-color: {HILIGHT_TEXT};
+}}
 QToolTip {{
     background: #ffffe1;
     color: {TEXT};
@@ -323,7 +350,7 @@ ICON_DKGRAY = "#808080"
 #              g 灰 / d 深灰 / l 绿色指示灯 / . 透明
 _ICON_COLORS = {
     "k": ICON_OUTLINE, "w": ICON_HILITE, "y": ICON_FACE, "o": ICON_SHADE,
-    "g": ICON_GRAY, "d": ICON_DKGRAY, "l": "#00c000",
+    "g": ICON_GRAY, "d": ICON_DKGRAY, "l": "#00c000", "b": "#000080",
 }
 
 FOLDER_CLOSED = (
@@ -362,6 +389,83 @@ FOLDER_OPEN = (
     ".kyyyyyyyyyyk...",
     "kyyyyyyyyyyk....",
     "kkkkkkkkkkk.....",
+    "................",
+    "................",
+)
+
+FLOPPY = (
+    "................",
+    "................",
+    "................",
+    ".kkkkkkkkkkkkkk.",
+    ".kgggggggggggdk.",
+    ".kgkkkkkkkkgggdk",
+    ".kgkwwwwwwkgggdk",
+    ".kgkwwwwwwkgggdk",
+    ".kgkkkkkkkkgggdk",
+    ".kgggggggggggdk.",
+    ".kgkkkkkkkkkgdk.",
+    ".kgkddddddddkdk.",
+    ".kkkkkkkkkkkkkk.",
+    "................",
+    "................",
+    "................",
+)
+
+CDROM = (
+    "................",
+    "................",
+    "................",
+    "................",
+    ".kkkkkkkkkkkkkk.",
+    ".kwwwwwwwwwwwwk.",
+    ".kggggkkkkgggdk.",
+    ".kgggkwwwwkggdk.",
+    ".kgggkwkkwkggdk.",
+    ".kglgkwwwwkggdk.",
+    ".kddddkkkkdddddk",
+    ".kkkkkkkkkkkkkk.",
+    "................",
+    "................",
+    "................",
+    "................",
+)
+
+NETWORK = (
+    "................",
+    "..kkkkkkkk......",
+    "..kwwwwwwk......",
+    "..kwbbbbwk......",
+    "..kwbbbbwk......",
+    "..kkkkkkkk......",
+    "....kggk........",
+    "..kkkkkkkkkk....",
+    "..k......kkkk...",
+    "..k...kkkkkkkk..",
+    "kkkkkkkkwwwwwk..",
+    "kwwwwwwkwbbbwk..",
+    "kwbbbbwkwwwwwk..",
+    "kwwwwwwkkkkkkk..",
+    "kkkkkkkk........",
+    "................",
+)
+
+# 列表第一行那个"上级目录"图标：一个横躺的文件夹，比 .. 两个点好认
+PARENT = (
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    ".kkkkkk.........",
+    ".kwwwwkkkkkkkkk.",
+    ".kwyyyyyyyyyyyk.",
+    ".kwyyyyyyyyyyok.",
+    ".kooooooooooook.",
+    ".kkkkkkkkkkkkkk.",
+    "................",
+    "................",
+    "................",
     "................",
     "................",
 )
@@ -408,8 +512,13 @@ def folder_pixmap(size: int = 16, is_open: bool = False) -> QPixmap:
 
 
 def drive_pixmap(size: int = 16) -> QPixmap:
-    """灰盒子加一颗绿灯，Win95 的驱动器图标。"""
+    """灰盒子加一颗绿灯，Win95 的硬盘图标。"""
     return _from_grid(DRIVE, size)
+
+
+def parent_pixmap(size: int = 16) -> QPixmap:
+    """列表第一行的"上级目录"图标。"""
+    return _from_grid(PARENT, size)
 
 
 class Win95IconProvider(QFileIconProvider):
@@ -429,7 +538,11 @@ class Win95IconProvider(QFileIconProvider):
         if hit is None:
             maker = {"folder": lambda: folder_pixmap(size, False),
                      "open": lambda: folder_pixmap(size, True),
-                     "drive": lambda: drive_pixmap(size)}[kind]
+                     "drive": lambda: _from_grid(DRIVE, size),
+                     "floppy": lambda: _from_grid(FLOPPY, size),
+                     "cdrom": lambda: _from_grid(CDROM, size),
+                     "network": lambda: _from_grid(NETWORK, size),
+                     "parent": lambda: _from_grid(PARENT, size)}[kind]
             pm = maker()
             hit = QIcon(pm)
             # 选中 / 禁用状态都用同一张，别让 Qt 自作主张把它变灰
@@ -438,15 +551,26 @@ class Win95IconProvider(QFileIconProvider):
             self._cache[key] = hit
         return hit
 
+    _BY_TYPE = None      # 延迟建表：IconType 是枚举，导入期建表会拖慢启动
+
     def icon(self, arg):
+        if Win95IconProvider._BY_TYPE is None:
+            t = QFileIconProvider
+            Win95IconProvider._BY_TYPE = {
+                t.Computer: "drive", t.Drive: "drive", t.Desktop: "folder",
+                t.Folder: "folder", t.Network: "network", t.Trashcan: "folder",
+            }
         if isinstance(arg, QFileIconProvider.IconType):
-            if arg in (QFileIconProvider.Drive, QFileIconProvider.Computer):
-                return self._icon("drive")
-            if arg == QFileIconProvider.Folder:
-                return self._icon("folder")
-            return super().icon(arg)
-        # QFileInfo 重载
+            kind = Win95IconProvider._BY_TYPE.get(arg)
+            return self._icon(kind) if kind else super().icon(arg)
+        # QFileInfo 重载 —— 树里绝大多数走这一支
         if arg.isDir():
+            name = arg.fileName().lower()
+            # Linux 上没有盘符，只能按挂载点名字猜个大概；猜不中就用文件夹
+            if name in ("floppy", "fd0", "fd1"):
+                return self._icon("floppy")
+            if name in ("cdrom", "dvd", "sr0", "cdrom0"):
+                return self._icon("cdrom")
             return self._icon("folder")
         return super().icon(arg)
 
@@ -463,7 +587,10 @@ def ui_font() -> QFont:
     else:
         f = QFont()
         f.setPointSize(9)
-    f.setStyleStrategy(QFont.PreferDefault)
+    # Win95 的界面字体是位图字体，一个像素都不糊。开着抗锯齿字就发虚，
+    # 整个界面立刻"现代"了 —— 这是最容易被忽略却最影响年代感的一处。
+    f.setStyleStrategy(QFont.NoAntialias)
+    f.setHintingPreference(QFont.PreferFullHinting)
     return f
 
 

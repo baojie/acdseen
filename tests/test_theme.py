@@ -115,7 +115,11 @@ def test_菜单开关能来回切(qapp, workdir):
 def test_像素网格都是16x16(qapp):
     for name, grid in (("closed", theme.FOLDER_CLOSED),
                        ("open", theme.FOLDER_OPEN),
-                       ("drive", theme.DRIVE)):
+                       ("drive", theme.DRIVE),
+                       ("floppy", theme.FLOPPY),
+                       ("cdrom", theme.CDROM),
+                       ("network", theme.NETWORK),
+                       ("parent", theme.PARENT)):
         assert len(grid) == 16, f"{name} 行数不是 16"
         bad = [i for i, row in enumerate(grid) if len(row) != 16]
         assert not bad, f"{name} 第 {bad} 行宽度不是 16"
@@ -166,3 +170,20 @@ def test_图标提供器有缓存(qapp):
     a = prov._icon("folder")
     b = prov._icon("folder")
     assert a is b
+
+
+def test_界面字体关掉抗锯齿(win95):
+    """Win95 的界面字体是位图字体，一个像素都不糊。开着抗锯齿字发虚，
+    整个界面立刻"现代"了 —— 这是最影响年代感的一处。"""
+    from PySide6.QtGui import QFont
+    assert theme.ui_font().styleStrategy() == QFont.NoAntialias
+    assert win95.font().styleStrategy() == QFont.NoAntialias
+
+
+def test_驱动器按类型给不同图标(qapp):
+    from PySide6.QtWidgets import QFileIconProvider
+    prov = theme.Win95IconProvider()
+    drive = prov.icon(QFileIconProvider.Drive).pixmap(16, 16).toImage()
+    net = prov.icon(QFileIconProvider.Network).pixmap(16, 16).toImage()
+    folder = prov.icon(QFileIconProvider.Folder).pixmap(16, 16).toImage()
+    assert drive != net != folder, "三类图标不该长一样"
