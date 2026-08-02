@@ -271,3 +271,117 @@ def test_关闭时发出closed信号(qapp, pics):
     v.close()
     pump(qapp, 300)
     assert seen == [expected], "浏览器靠这个信号同步选中项"
+
+
+# ------------------------------------------------------------------ 幻灯片间隔
+def test_间隔可设任意秒数(viewer):
+    viewer.set_delay(2.5)
+    assert viewer._slideshow_delay == 2.5
+    assert viewer._interval_ms() == 2500
+
+
+def test_零秒不给定时器传0(viewer):
+    """真传 0 是空转烧 CPU。0 档给最小节拍，靠"没解完就不翻"踩刹车。"""
+    viewer.set_delay(0)
+    assert viewer._slideshow_delay == 0
+    assert viewer._interval_ms() == config.SLIDESHOW_ASAP_MS > 0
+    assert viewer.format_delay(0) == "尽快"
+
+
+def test_零秒幻灯片跑起来且不跳帧(qapp, viewer):
+    viewer.set_delay(0)
+    viewer.toggle_slideshow()
+    assert viewer._slideshow.isActive()
+    start = viewer.current
+    assert pump(qapp, 8000, lambda: viewer.current != start), "0 秒档应该真的往前翻"
+    # 守卫：上一张还没解出来就不许往前跑
+    viewer._is_preview, viewer._image = True, None
+    before = viewer._index
+    viewer._slideshow_tick()
+    assert viewer._index == before, "没解完还翻，就是跳帧"
+    viewer.toggle_slideshow()
+
+
+def test_间隔超范围会夹住(viewer):
+    viewer.set_delay(-5)
+    assert viewer._slideshow_delay == config.SLIDESHOW_DELAY_MIN
+    viewer.set_delay(99999)
+    assert viewer._slideshow_delay == config.SLIDESHOW_DELAY_MAX
+
+
+def test_档位循环含0秒(viewer):
+    viewer.set_delay(config.SLIDESHOW_DELAYS[1])
+    viewer._cycle_delay(-1)
+    assert viewer._slideshow_delay == 0, "往下一档应该走到 0 秒"
+    viewer._cycle_delay(-1)
+    assert viewer._slideshow_delay == 0, "已经在头上了，不该越界"
+
+
+def test_任意值按档位增减先归位(viewer):
+    """用对话框设过 7 秒后按 ]，应该走到最接近的档位而不是乱跳。"""
+    viewer.set_delay(7)
+    viewer._cycle_delay(+1)
+    assert viewer._slideshow_delay in config.SLIDESHOW_DELAYS
+    assert viewer._slideshow_delay == 5, "7 最接近 5，先归位到 5"
+
+
+# ------------------------------------------------------------------ 乱序
+def test_乱序不换掉当前这张(viewer):
+    cur = viewer.current
+    viewer.set_shuffle(True)
+    assert viewer._shuffle
+    assert viewer.current == cur, "切乱序不该把你正在看的图换掉"
+    assert set(viewer._files) == set(viewer._original_files), "一张都不能丢"
+
+
+def test_关掉乱序还原原始顺序(viewer):
+    original = list(viewer._files)
+    viewer.set_shuffle(True)
+    viewer.set_shuffle(False)
+    assert viewer._files == original
+    assert not viewer._shuffle
+
+
+def test_乱序确实打乱了顺序(qapp, pics):
+    """单次洗牌理论上可能洗回原样，多洗几次至少有一次不同。"""
+    files = [f for f in list_images(pics) if f.name != "broken.jpg"]
+    assert len(files) >= 5, "样本太少，这条测试没意义"
+    changed = False
+    for _ in range(20):
+        v = Viewer(files, 0)
+        v.set_shuffle(True)
+        if v._files != files:
+            changed = True
+        v.teardown()
+        if changed:
+            break
+    assert changed, "洗了 20 次一次都没变，随机没生效"
+
+
+def test_乱序跑完一轮会重洗(qapp, viewer):
+    viewer.set_shuffle(True)
+    viewer._index = len(viewer._files) - 1     # 站在最后一张
+    before = list(viewer._files)
+    viewer.next_image()
+    pump(qapp, 300)
+    assert viewer._index == 0, "应该回到新一轮的第一张"
+    assert set(viewer._files) == set(before), "重洗不能丢图"
+
+
+def test_乱序时删图不会让文件复活(qapp, workdir, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+    files = [f for f in list_images(workdir) if f.name != "broken.jpg"]
+    v = Viewer(files, 0)
+    v.show()
+    pump(qapp, 4000, lambda: v._image is not None)
+
+    v.set_shuffle(True)
+    doomed = v.current
+    v.delete_current()
+    pump(qapp, 300)
+    v.set_shuffle(False)                       # 还原时按的是 _original_files
+    assert doomed not in v._files, "删掉的图不能靠关乱序复活"
+    assert len(v._files) == len(files) - 1
+    v.close()

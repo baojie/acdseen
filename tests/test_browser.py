@@ -136,6 +136,57 @@ def test_同步树选中不递归回调(qapp, browser, tmp_path):
     browser.set_directory = orig
 
 
+def test_幻灯演示从指定的那张开始(qapp, browser):
+    browser._start_slideshow(2)
+    pump(qapp, 500)
+    v = browser._viewer
+    assert v is not None, "应已切到看图页"
+    assert v.current == browser._model.paths()[2], "该从第 3 张开始，不是第 1 张"
+    assert v._slideshow.isActive(), "幻灯片没跑起来"
+    browser._on_exit_view(None)
+    pump(qapp, 300)
+
+
+def test_幻灯演示起始张号越界会夹住(qapp, browser):
+    n = browser._model.rowCount()
+    browser._start_slideshow(n + 99)
+    pump(qapp, 500)
+    assert browser._viewer.current == browser._model.paths()[n - 1]
+    browser._on_exit_view(None)
+    pump(qapp, 300)
+
+
+def test_菜单栏幻灯片仍从第一张开始(qapp, browser):
+    """triggered 会塞个 checked 布尔进来，直接连 _start_slideshow 会被当成张号。"""
+    act = next(a for a in browser.actions() if a.text() == "从第一张开始幻灯片")
+    act.trigger()
+    pump(qapp, 500)
+    assert browser._viewer.current == browser._model.paths()[0]
+    browser._on_exit_view(None)
+    pump(qapp, 300)
+
+
+def test_右键菜单里有幻灯演示(qapp, browser):
+    """只构造菜单不 exec —— exec 是模态的，测试里一弹就再也回不来。"""
+    rect = browser._view.visualRect(browser._model.index(1, 0))
+    m = browser._build_file_menu(rect.center())
+    acts = [a.text() for a in m.actions()]
+    assert "幻灯演示" in acts
+    assert acts.index("幻灯演示") == acts.index("查看\tEnter") + 1, "应紧跟在「查看」下面"
+    assert m.actions()[acts.index("幻灯演示")].isEnabled()
+    m.deleteLater()
+
+
+def test_右键点空白处幻灯演示不可用(qapp, browser):
+    from PySide6.QtCore import QPoint
+    browser._view.clearSelection()
+    browser._view.setCurrentIndex(browser._model.index(-1, 0))
+    m = browser._build_file_menu(QPoint(5, 100000))   # 列表下方的空白
+    acts = [a.text() for a in m.actions()]
+    assert not m.actions()[acts.index("幻灯演示")].isEnabled()
+    m.deleteLater()
+
+
 def test_预览窗格可见性开关(browser):
     """模拟菜单点击：Qt 先切 checked，再发 triggered 调 _toggle_preview。"""
     assert browser._preview.isVisible()
