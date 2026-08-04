@@ -1,233 +1,277 @@
 # ACDSeeN
 
-1996 年 ACDSee 1.2x 的复刻 —— 一个浏览器 + 一个看图器。
+*[简体中文](README.zh-CN.md)*
 
-没有数据库，没有编辑器，没有云。只求打开得快、翻页不卡、手不离键盘。
+A remake of ACDSee 1.2x (1996) — one browser, one viewer.
 
-![浏览器窗口：左边目录树，左下预览窗格，右边缩略图网格](ref/screenshot-browser.png)
+No database, no editor, no cloud. Just open fast, page without stutter, and keep
+your hands on the keyboard.
 
-> 界面是**故意**做成这样的。灰底、立体边框、深蓝选中条、锯齿位图字体 ——
-> 这不是没做完，也不是懒得配主题，而是照着 1996 年那版一处一处对出来的。
-> 觉得扎眼的话，菜单「查看 → Windows 95 外观」可以关掉，换回系统原生样式。
+![The browser window: folder tree on the left, preview pane bottom-left, thumbnail grid on the right](ref/screenshot-browser.png)
 
-## 为什么做这个
+> The interface looks like that **on purpose**. Grey background, chiseled 3D
+> borders, navy selection bar, aliased bitmap font — this is not unfinished work,
+> and not a theme I couldn't be bothered to configure. It was matched against the
+> 1996 original one detail at a time. If it grates, turn it off under
+> **View → Windows 95 look** and get your native system style back.
 
-一直找不到一个像 SEA 或者当年 ACDSee 那样好用的看图软件：简单、纯粹、快。
+## Why this exists
 
-三十年过去，所有看图软件里最好用的仍然是当年那个 ACDSee —— 连它自己今天那个臃肿的
-版本都不行。功能越堆越多，打开越来越慢，而我要的一直只是：**看图**。
+I have never been able to find an image viewer as good as SEA or the old ACDSee:
+simple, pure, fast.
 
-所以自己做一个，算是致敬。
+Thirty years on, the best image viewer I have ever used is still that ACDSee —
+including, and especially, compared to the bloated thing it became. More features
+piled on, slower to open, when all I ever wanted was to **look at pictures**.
 
-## 复刻的是哪一版
+So I built one. Consider it a tribute.
 
-ACDSee 1994 年首发，是 Windows 3.x 上的 16 位程序。本项目复刻的是
-**1.2x（1996）**。那个版本的定位非常清楚：
-**它不是图片管理器，也没有任何编辑功能**，只有一个 Browser 和一个 Viewer。
+## Which version this remakes
 
-| 原版 1.2x 有 | 本项目 |
+ACDSee first shipped in 1994 as a 16-bit program for Windows 3.x. This project
+remakes **1.2x (1996)**. That version knew exactly what it was:
+**not an image manager, and not an editor** — just a Browser and a Viewer.
+
+| What the original 1.2x had | Here |
 |---|---|
-| Image Browser：目录树 + 彩色缩略图 + 预览窗格 | ✅ |
-| 内建删除 / 重命名 / 复制 / 移动 | ✅ |
-| Image Viewer：全屏、缩放、快速滚动 | ✅ |
-| 解码过程中即可滚动缩放 | ✅ 两段式解码 |
-| 幻灯片，自动 / 手动，预读下一张 | ✅ |
-| BMP GIF JPG PNG PCX TGA TIFF Photo-CD | ✅ 另加 WebP / PSD / AVIF |
+| Image Browser: folder tree + color thumbnails + preview pane | ✅ |
+| Built-in delete / rename / copy / move | ✅ |
+| Image Viewer: full screen, zoom, fast scrolling | ✅ |
+| Scroll and zoom while the image is still decoding | ✅ two-stage decode |
+| Slideshow, automatic or manual, next image pre-read | ✅ |
+| BMP GIF JPG PNG PCX TGA TIFF Photo-CD | ✅ plus WebP / PSD / AVIF |
 
-原版**没有**的一律不做：无标签分类、无 EXIF 面板、无编辑、无批处理、无插件。
-这些是 3.0 之后堆上去的东西，也正是今天难找到「简单看图软件」的原因。
+Anything the original did **not** have stays out: no tagging, no EXIF panel, no
+editing, no batch processing, no plugins. That is all 3.0-and-later accretion —
+and the reason a "simple image viewer" is so hard to find today.
 
-## 特性
+## Features
 
-- **浏览器**：左边目录树 + 左下方预览窗格（选中即见大图），右边缩略图或详细列表，只看一个目录，不递归、不建库、不扫全盘
-- **Windows 95 外观**：`#C0C0C0` 灰底、2px 立体边框、`#000080` 深蓝选中条、`+/-` 方框目录树、黄文件夹图标、无抗锯齿位图字体、方块箭头滚动条，默认开启，菜单「查看」可关
-- **路径栏 + `..` 行**：右上角可输入路径直接跳转，列表第一行是上级目录
-- **排序**：名称 / 文件大小 / 类型 / 修改日期 / 像素总数 / 宽度 / 高度 / 随机，都可倒序；列表模式下点表头即排序
-- **看图器**：全屏看图，屏幕上除了图什么都没有，信息走可开关的 OSD 叠层
-- **永不"加载中"**：两段式解码 + 预读，翻页零延迟（详见下文「技术实现」）
-- **全键盘可达**：文件操作（重命名 / 删除 / 复制 / 移动）内建，不用切回文件管理器
-- **幻灯片**：间隔任意秒数（含 0 秒 = 解完即翻）、可乱序播放，支持方向键、缩放、单击翻页等完整快捷键
+- **Browser**: folder tree on the left with a preview pane below it (select an
+  image, see it large), thumbnails or a detail list on the right. One directory
+  at a time — no recursion, no catalog, no scanning your whole drive
+- **Windows 95 look**: `#C0C0C0` grey, 2px chiseled borders, `#000080` navy
+  selection bar, `+/-` box tree, yellow folder icons, non-antialiased bitmap
+  font, square-arrow scrollbars. On by default, switchable under View
+- **Path bar + `..` row**: type a path in the top right to jump straight there;
+  the first row of the list is the parent directory
+- **Sorting**: name / file size / type / date modified / total pixels / width /
+  height / random, each reversible; in list mode, click a column header to sort
+- **Viewer**: full screen, nothing on screen but the image, with all information
+  moved into a toggleable OSD overlay
+- **Never says "Loading"**: two-stage decode plus pre-read, so paging is
+  instantaneous (see [How it works](#how-it-works))
+- **Fully keyboard-reachable**: rename / delete / copy / move are built in — no
+  switching back to a file manager
+- **Slideshow**: any interval in seconds (including 0 = advance as soon as the
+  decode finishes), optional shuffle, with arrow keys, zoom and click-to-advance
+  all still live
 
-## 安装
+## Installing
 
-依赖：
+Requirements:
 
 - Python 3.10+
-- [PySide6](https://pypi.org/project/PySide6/)（必需）
-- [Pillow](https://pypi.org/project/Pillow/)（可选，仅用于 PCX/PCD/PSD 等 Qt 不认的老格式兜底）
+- [PySide6](https://pypi.org/project/PySide6/) (required)
+- [Pillow](https://pypi.org/project/Pillow/) (optional — only as a fallback for
+  PCX/PCD/PSD and other old formats Qt doesn't know)
 
 ```bash
 git clone https://github.com/baojie/acdseen.git
 cd acdseen
-./setup.sh        # 一键创建虚拟环境并安装依赖
+./setup.sh        # creates a virtualenv and installs dependencies
 ```
 
-或手动：
+Or by hand:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-也可以装成命令用（装完直接敲 `acdseen`）：
+You can also install it as a command (then just type `acdseen`):
 
 ```bash
-pip install .            # 加老格式兜底：pip install '.[legacy]'
+pip install .            # with the old-format fallback: pip install '.[legacy]'
 ```
 
-平台：开发和日常使用都在 Linux 上。代码只有「在文件管理器中打开」一处用了
-`xdg-open`，其余全走 Qt，Windows / macOS 上应该能跑，但没有实测过。
+Platform: developed and used daily on Linux. Exactly one code path — "open in
+file manager" — uses `xdg-open`; everything else goes through Qt, so Windows and
+macOS should work, but neither has been tested.
 
-## 使用
+## Using it
 
 ```bash
-./run.sh                       # 打开上次的目录（没有就是当前目录）
-./run.sh ~/Pictures            # 打开指定目录的浏览器
-./run.sh photo.jpg             # 直接全屏看这张图，并把同目录其他图排进列表
+./run.sh                       # opens the last directory (or the current one)
+./run.sh ~/Pictures            # opens the browser on that directory
+./run.sh photo.jpg             # goes straight to full screen, with the rest of
+                               # the directory queued up behind it
 ```
 
-等价于 `python -m acdseen [参数]`。
+Equivalent to `python -m acdseen [args]`.
 
-## 支持的格式
+## Supported formats
 
-| 来源 | 格式 |
+| Source | Formats |
+|--------|---------|
+| Qt built-in | BMP, GIF, JPEG/JPG, PNG, TGA, TIFF, WebP, PBM/PGM/PPM, XBM, XPM, ICO, SVG |
+| Pillow fallback | PCX, Photo-CD (PCD), PSD, JP2, AVIF, HEIC |
+
+The thumbnail disk cache lives in `~/.cache/acdseen/thumbs` (XDG-compliant) and
+can be cleared any time from **View → Clear thumbnail cache**.
+
+## Keyboard shortcuts
+
+### Browser
+
+| Key | Action |
 |------|------|
-| Qt 内置 | BMP、GIF、JPEG/JPG、PNG、TGA、TIFF、WebP、PBM/PGM/PPM、XBM、XPM、ICO、SVG |
-| Pillow 兜底 | PCX、Photo-CD(PCD)、PSD、JP2、AVIF、HEIC |
+| `Enter` / double-click | View image |
+| `Backspace` | Go to parent directory |
+| `F2` | Rename |
+| `Del` | Delete |
+| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste into current directory |
+| `Ctrl+Shift+C` / `Ctrl+Shift+M` | Copy to… / Move to… |
+| `Ctrl++` / `Ctrl+-` | Larger / smaller thumbnails |
+| `F5` | Refresh |
+| `F8` | Toggle thumbnails / list |
+| `Ctrl+1` / `Ctrl+2` | Thumbnail mode / list mode |
+| `F9` | Show / hide the folder tree |
+| View → Preview pane | Show / hide the preview of the selected image |
+| `Ctrl+S` | Full-screen slideshow from the first image |
+| Right-click → Slideshow | Full-screen slideshow from the image you clicked |
 
-缩略图磁盘缓存放 `~/.cache/acdseen/thumbs`（遵循 XDG），菜单「查看 → 清空缩略图缓存」可随时清掉。
+### Viewer
 
-## 快捷键
-
-### 浏览器
-
-| 按键 | 功能 |
+| Key | Action |
 |------|------|
-| `Enter` / 双击 | 查看图片 |
-| `Backspace` | 回到上级目录 |
-| `F2` | 重命名 |
-| `Del` | 删除 |
-| `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | 复制 / 剪切 / 粘贴到当前目录 |
-| `Ctrl+Shift+C` / `Ctrl+Shift+M` | 复制到… / 移动到… |
-| `Ctrl++` / `Ctrl+-` | 缩略图放大 / 缩小 |
-| `F5` | 刷新 |
-| `F8` | 切换 缩略图 / 列表 |
-| `Ctrl+1` / `Ctrl+2` | 缩略图模式 / 列表模式 |
-| `F9` | 显示 / 隐藏目录树 |
-| 菜单「查看 → 预览窗格」 | 显示 / 隐藏左下方选中图片预览 |
-| `Ctrl+S` | 从第一张开始全屏幻灯片 |
-| 右键 → 幻灯演示 | 从右键点中的那张开始全屏幻灯片 |
+| `Space` / `PgDn` / `→` | Next image |
+| `Backspace` / `PgUp` / `←` | Previous image |
+| `Home` / `End` | First / last image |
+| `+` / `-` | Zoom in / out |
+| `Z` | Scale to display box (**default**: small images are enlarged to fill) |
+| `*` | Fit to window (small images not enlarged — original ACDSee behavior) |
+| `/` | Actual size, 1:1 |
+| `W` | Fit to width |
+| `F` / `Enter` / `F11` | Toggle full screen |
+| `S` | Slideshow on/off |
+| `R` | Shuffle on/off |
+| `D` | Set the slideshow interval (any number of seconds, `0` = as fast as possible) |
+| `[` / `]` | Interval down / up (steps: 0 / 0.5 / 1 / 2 / 3 / 5 / 10 / 15 / 30 / 60 s) |
+| `I` | Show / hide the info bar |
+| `Del` | Delete the current image |
+| `Esc` | Leave full screen / back to the browser |
 
-### 看图器
+**Mouse**: click to advance, drag to pan, wheel to page, `Ctrl+wheel` to zoom,
+middle-click to toggle fit/1:1, double-click for full screen.
 
-| 按键 | 功能 |
-|------|------|
-| `空格` / `PgDn` / `→` | 下一张 |
-| `退格` / `PgUp` / `←` | 上一张 |
-| `Home` / `End` | 第一张 / 最后一张 |
-| `+` / `-` | 放大 / 缩小 |
-| `Z` | 缩放到显示框（**默认**：小图也放大，铺满） |
-| `*` | 适应窗口（小图不放大，ACDSee 原版行为） |
-| `/` | 实际大小 1:1 |
-| `W` | 适应宽度 |
-| `F` / `Enter` / `F11` | 全屏切换 |
-| `S` | 幻灯片开关 |
-| `R` | 乱序开关 |
-| `D` | 设定幻灯片间隔（任意秒数，`0` = 尽快） |
-| `[` / `]` | 幻灯片间隔 减 / 加（档位 0 / 0.5 / 1 / 2 / 3 / 5 / 10 / 15 / 30 / 60 秒） |
-| `I` | 显示 / 隐藏信息条 |
-| `Del` | 删除当前图片 |
-| `Esc` | 退出全屏 / 返回浏览 |
+## How it works
 
-**鼠标**：单击翻页，拖拽平移，滚轮翻页，`Ctrl+滚轮` 缩放，中键切换 适应/1:1，双击全屏。
-
-## 技术实现
-
-实测（4000×3000 JPEG，冷缓存，Python 3.14 + PySide6）：
+Measured (4000×3000 JPEG, cold cache, Python 3.14 + PySide6):
 
 ```
-Python 导入 + QApplication : 199 ms
-到首帧上屏                 : 255 ms      ← 用户感知到的「打开」时间
-到全尺寸就绪               : 331 ms
+Python import + QApplication : 199 ms
+first frame on screen        : 255 ms      <- the "it opened" moment
+full resolution ready        : 331 ms
 ```
 
-「永远不出现加载中」的手感，来自三条并行通道：
+Never showing a "Loading" state comes from three channels running in parallel:
 
-1. **两段式解码**。先用 `QImageReader.setScaledSize()` 拿一张 1024px 边长的预览 —— JPEG 走 DCT 缩放，比全解码快 4-8 倍 —— 立刻上屏；同一张图的全尺寸在后台线程继续解，解完无缝替换，缩放/平移参数保持不变。
-2. **预读**。停在第 *i* 张时，后台把 `i±2` 的全部解好塞进 LRU 缓存，翻页时直接命中，这一帧就是全尺寸。
-3. **独立缩略图通道**。缩略图走自己的线程池 + 磁盘缓存（key 含路径 + mtime + 尺寸，文件变了自动失效），和看图器的解码线程互不抢占；切目录时用 generation 计数器作废所有在飞任务。
+1. **Two-stage decode.** First a 1024px-edge preview via
+   `QImageReader.setScaledSize()` — JPEG takes the DCT-scaling path, 4–8× faster
+   than a full decode — and it goes on screen immediately. The full-resolution
+   decode of the same image continues on a background thread and swaps in
+   seamlessly, with zoom and pan parameters preserved.
+2. **Pre-read.** While you sit on image *i*, the background fully decodes
+   `i±2` into an LRU cache, so paging is a cache hit and the very first frame is
+   already full resolution.
+3. **A separate thumbnail channel.** Thumbnails get their own thread pool and
+   disk cache (the key includes path + mtime + size, so an edited file
+   invalidates itself) and never contend with the viewer's decode threads.
+   Changing directory bumps a generation counter that voids every in-flight task.
 
-浏览器左下方的**预览窗格**同源：单线程解码、generation 作废，目标尺寸跟着窗格走（原版行为：预览区一变尺寸就自动重载，这里用单发 QTimer 防抖）；看图时暂停，不让它和看图器抢 CPU。
+The **preview pane** at the bottom left works the same way: single-threaded
+decode, generation-based invalidation, target size tracking the pane (the
+original reloaded whenever the preview area was resized; here a single-shot
+QTimer debounces it). It pauses while you're viewing so it never competes with
+the viewer for CPU.
 
-## 项目结构
+## Project layout
 
 ```
 acdseen/
-├── __main__.py    入口
-├── main.py        启动逻辑（目录 / 单张图 / 记住上次目录）
+├── __main__.py    entry point
+├── main.py        startup logic (directory / single image / last directory)
 │
-├── browser.py     浏览器窗口骨架：目录树、分割布局、目录切换、状态栏、设置持久化
-├── thumbmodel.py  ├─ 多列模型（两个视图共用）+ 缩略图格子的绘制
-├── viewpanes.py   ├─ 缩略图网格 / 详细列表两个视图，切换与表头排序
-├── menus.py       ├─ 菜单栏、右键菜单、帮助与关于
-├── fileops.py     ├─ 文件操作：重命名 / 删除 / 复制 / 剪切 / 粘贴 / 复制到 / 移动到
-├── viewhost.py    ├─ 浏览 ↔ 看图 的页面切换
-├── helptext.py    └─ F1 的快捷键表
-├── theme.py       Windows 95 外观：调色板 + 样式表 + 自绘的树分支和箭头
-├── preview.py     预览窗格：选中图片的大图预览，单线程解码 + 防抖重载
+├── browser.py     browser window skeleton: tree, splitters, directory changes, status bar, settings
+├── thumbmodel.py  ├─ multi-column model (shared by both views) + thumbnail cell painting
+├── viewpanes.py   ├─ the thumbnail grid and detail list views, switching, header sorting
+├── menus.py       ├─ menu bar, context menu, help and about
+├── fileops.py     ├─ file operations: rename / delete / copy / cut / paste / copy to / move to
+├── viewhost.py    ├─ page switching between browsing and viewing
+├── helptext.py    └─ the F1 shortcut table
+├── theme.py       Windows 95 look: palette + stylesheet + hand-drawn tree branches and arrows
+├── preview.py     preview pane: large preview of the selection, single-thread decode, debounced reload
 │
-├── viewer.py      全屏看图器主体：导航、加载回调、缩放、键鼠事件
-├── slideshow.py   ├─ 幻灯片间隔与乱序播放
-├── render.py      └─ paintEvent 与 OSD 叠层
+├── viewer.py      full-screen viewer: navigation, load callbacks, zoom, key and mouse events
+├── slideshow.py   ├─ slideshow interval and shuffle
+├── render.py      └─ paintEvent and the OSD overlay
 │
-├── loader.py      解码层：缩略图线程池、两段式加载、预读、LRU
-├── config.py      集中放的"手感"参数（缩放步进、缓存大小、预读张数…）
-└── util.py        格式化、自然排序等小工具
+├── loader.py      decode layer: thumbnail thread pool, two-stage load, pre-read, LRU
+├── config.py      the "feel" parameters, all in one place (zoom steps, cache sizes, pre-read count…)
+└── util.py        formatting, natural sort, and other small helpers
 ```
 
-`viewpanes` / `menus` / `fileops` / `viewhost` / `slideshow` / `render` 是 mixin，不是独立类 —— 它们要读当前
-选中项、要刷新列表、要往状态栏写消息，和宿主的耦合是真实存在的，硬拆成"传一堆回调
-进去"只会更绕。每个文件的 docstring 都写明了它依赖宿主提供哪些属性和方法。
+`viewpanes` / `menus` / `fileops` / `viewhost` / `slideshow` / `render` are
+mixins, not standalone classes. They read the current selection, refresh the
+list, and write to the status bar — the coupling to the host is real, and
+forcing it apart into "pass in a pile of callbacks" would only obscure it. Each
+file's docstring states exactly which host attributes and methods it relies on.
 
-## 开发
+## Development
 
 ```bash
-./setup.sh && ./run.sh        # 搭建环境并运行
+./setup.sh && ./run.sh        # set up and run
 ```
 
-设计取舍都写在各模块的 docstring 里，改"手感"参数去 `config.py`。
+Design trade-offs are documented in each module's docstring; the "feel"
+parameters live in `config.py`.
 
-Windows 95 外观还差哪些、哪些是刻意不做的，见 [`ref/win95-gaps.md`](ref/win95-gaps.md)，
-对照的参考图在同一目录。
+What the Windows 95 look is still missing, and what is deliberately left out, is
+in [`ref/win95-gaps.md`](ref/win95-gaps.md), with the reference screenshot in the
+same directory.
 
-### 测试
+### Tests
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest
 ```
 
-全部跑在 `QT_QPA_PLATFORM=offscreen` 下，无需真实显示环境；缩略图缓存和
-QSettings 都被重定向到临时目录，不会碰你的 `~/.cache` 和真实配置。
+Everything runs under `QT_QPA_PLATFORM=offscreen`, so no real display is needed;
+the thumbnail cache and QSettings are redirected to temporary directories and
+will not touch your `~/.cache` or your real configuration.
 
-夹具会按环境能力生成测试图：GIF 无论如何 Qt 都写不出，TIFF 取决于有没有
-`qtimageformats` 插件，PCX 只有 Pillow 认——写不出的格式就不生成，对应
-测试自动跳过。
+Fixtures generate test images according to what the environment can actually
+write: Qt cannot write GIF at all, TIFF depends on whether the `qtimageformats`
+plugin is present, and PCX only works via Pillow. Formats that can't be written
+aren't generated, and the corresponding tests skip themselves.
 
-`tests/test_loader.py` 里有三条测试直接对应开发期修过的真实 bug，
-删掉它们等于把坑重新挖开：
+Three tests in `tests/test_loader.py` map directly to real bugs fixed during
+development. Deleting them re-digs the holes:
 
-| 测试 | 挡住的坑 |
+| Test | The hole it covers |
 |---|---|
-| `test_多线程并发解码pcx不崩溃` | Pillow 插件 lazy-import 在多工作线程下撞崩 shiboken（进程级 fatal error） |
-| `test_缩略图确实生成且尺寸正确` | `QImage.scaled()` 传 int 而非 Qt 枚举，任务静默抛异常，缩略图全空 |
-| `test_pil兜底不经过ImageQt` | `PIL.ImageQt` 在工作线程碰 Qt binding 会炸，必须自己从原始字节构造 `QImage` |
+| `test_多线程并发解码pcx不崩溃` (concurrent PCX decode doesn't crash) | Pillow's lazy plugin import crashed shiboken under multiple worker threads (process-level fatal error) |
+| `test_缩略图确实生成且尺寸正确` (thumbnails are generated at the right size) | `QImage.scaled()` was passed an int instead of a Qt enum; the task threw silently and every thumbnail came back empty |
+| `test_pil兜底不经过ImageQt` (the PIL fallback avoids ImageQt) | `PIL.ImageQt` blows up when it touches the Qt bindings from a worker thread; the `QImage` has to be built from raw bytes instead |
 
-版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+Release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 
-## 说明
+## Notes
 
-本项目是照着记忆和截图重写的独立实现，不含原版任何代码或资源，与 ACD Systems
-及其 ACDSee 商标没有任何关系。名字里的 "N" 是 New，也是"这不是那个 ACDSee"的意思。
+This is an independent implementation, written from memory and screenshots. It
+contains no original code or assets and has no connection to ACD Systems or its
+ACDSee trademark. The "N" stands for New — and for "this is not that ACDSee".
 
-许可证 [MIT](LICENSE)。
+Licensed [MIT](LICENSE).

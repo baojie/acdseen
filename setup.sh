@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
-# ACDSeeN 环境搭建：创建虚拟环境并安装依赖。
+# ACDSeeN setup: create a virtualenv and install dependencies.
 set -euo pipefail
 
-# 切换到脚本所在目录，保证从任意位置运行都正确
+# Change to the script's directory so it works from anywhere
 cd "$(dirname "$0")"
 
 PYTHON="${PYTHON:-python3}"
 VENV_DIR=".venv"
 
-echo "==> 使用解释器: $($PYTHON --version 2>&1)"
+echo "==> Interpreter: $($PYTHON --version 2>&1)"
 
 if [ ! -d "$VENV_DIR" ]; then
-    echo "==> 创建虚拟环境 $VENV_DIR"
+    echo "==> Creating virtualenv $VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"
 else
-    echo "==> 虚拟环境已存在，跳过创建"
+    echo "==> Virtualenv already exists, skipping"
 fi
 
 PIP="$VENV_DIR/bin/pip"
-echo "==> 升级 pip"
+echo "==> Upgrading pip"
 "$PIP" install --upgrade pip
 
-echo "==> 安装依赖（见 requirements.txt）"
+echo "==> Installing dependencies (see requirements.txt)"
 "$PIP" install -r requirements.txt
 
 echo ""
-echo "完成！运行 ./run.sh 启动。"
+echo "Done. Run ./run.sh to start."

@@ -1,7 +1,7 @@
 [project]
 name = "acdseen"
 version = "0.1.0"
-description = "1996 年 ACDSee 1.2x 的复刻：一个浏览器 + 一个看图器，快就完事了"
+description = "A remake of ACDSee 1.2x (1996): one browser, one viewer, and fast is the whole point"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
