@@ -1,10 +1,12 @@
-"""图片列表的模型与缩略图格子的绘制。
+"""The model for the image list and the drawing of thumbnail cells.
 
-模型是多列的（名称 / 尺寸 / 大小 / 类型 / 修改日期），两个视图共用它：
-  * 缩略图模式  QListView 只显示第 0 列，走 ThumbDelegate 自己画格子
-  * 列表模式    QTreeView 显示全部列，表头、点击排序、拖列宽都是原生的
+The model is multi-column (name / dimensions / size / type / modified date), and both
+views share it:
+  * thumbnail mode  QListView shows only column 0, cells painted by ThumbDelegate
+  * list mode       QTreeView shows all columns; header, click-to-sort, and column
+                    resizing are all native
 
-两边不认识 Browser —— 换个宿主窗口照样能用。
+Neither side knows Browser -- swapping in a different host window still works.
 """
 
 from __future__ import annotations
@@ -20,8 +22,9 @@ from .i18n import tr
 from .loader import ThumbnailLoader
 from .util import format_mtime, format_size, human_dims, image_size
 
-# (标题 id, 点表头时用的排序键, 默认列宽)。列宽 None = 名称列，占掉剩下的空间。
-# 标题是 i18n 的 id，headerData 里 tr() 再查表。
+# (column title id, sort key used when the header is clicked, default column width).
+# Width None = the name column, which takes up the remaining space.
+# Titles are i18n ids; headerData looks them up with tr().
 COLUMNS = (
     ("col.name",  config.SORT_NAME,   None),
     ("col.dims",  config.SORT_PIXELS, 110),
@@ -33,12 +36,13 @@ COL_NAME, COL_DIMS, COL_SIZE, COL_TYPE, COL_MTIME = range(len(COLUMNS))
 
 
 class ThumbModel(QAbstractTableModel):
-    """图片列表模型。缩略图按需异步加载 —— Qt 只为可见项调 data()，
-    所以这里的 lazy request 天然只处理视口内的文件。"""
+    """The image-list model. Thumbnails load asynchronously on demand -- Qt only calls
+    data() for visible items, so the lazy requests here naturally only handle the files
+    in the viewport."""
 
     def __init__(self, loader: ThumbnailLoader, parent=None):
         super().__init__(parent)
-        self._parent_dir: Path | None = None   # 有值时第 0 行是 ".."
+        self._parent_dir: Path | None = None   # when set, row 0 is ".."
         self._paths: list[Path] = []
         self._thumbs: dict[Path, QIcon] = {}
         self._requested: set[Path] = set()
@@ -48,10 +52,12 @@ class ThumbModel(QAbstractTableModel):
         self._placeholder = self._make_placeholder(self._edge)
         self._parent_pm: QIcon | None = None
 
-    # -- 数据 --
-    # 视图里的行 = [".." 导航行（可选）] + 图片行。
-    # 对外一律用"视图行号"，内部 _paths 只装图片 —— 两套编号靠 _offset 换算，
-    # 别让哨兵路径混进 _paths，否则删除 / 幻灯片 / 预览全要额外判空。
+    # -- Data --
+    # Rows in the view = [".." navigation row (optional)] + image rows.
+    # Externally everything uses "view row numbers"; internally _paths holds only
+    # images -- the two numberings are converted via _offset. Don't let the sentinel
+    # path leak into _paths, or delete / slideshow / preview would all need extra
+    # emptiness checks.
     def set_paths(self, paths: list[Path], parent_dir: Path | None = None) -> None:
         self.beginResetModel()
         self._paths = paths
@@ -70,27 +76,28 @@ class ThumbModel(QAbstractTableModel):
         return bool(index.isValid() and self._offset() and index.row() == 0)
 
     def image_index(self, index: QModelIndex) -> int:
-        """视图行 → _paths 里的下标。导航行或越界返回 -1。"""
+        """View row -> index into _paths. Returns -1 for the navigation row or out of range."""
         if not index.isValid():
             return -1
         row = index.row() - self._offset()
         return row if 0 <= row < len(self._paths) else -1
 
     def first_image_row(self) -> int:
-        """第一张图在视图里的行号 —— 切目录后该选中的就是它，不是 ".."。"""
+        """The view row of the first image -- after switching directories this is what should be selected, not ".."."""
         return self._offset() if self._paths else -1
 
     def paths(self) -> list[Path]:
         return self._paths
 
     def path_at(self, index: QModelIndex) -> Path | None:
-        """只看行号 —— 列表模式下点在哪一列都该拿到同一个文件。
-        导航行返回 None：它不是图片，不该进选择集、预览和文件操作。"""
+        """Only the row matters -- in list mode, clicking any column should yield the
+        same file. The navigation row returns None: it is not an image, so it should
+        not enter the selection, preview, or file operations."""
         row = self.image_index(index)
         return self._paths[row] if row >= 0 else None
 
     def index_of(self, path: Path) -> int:
-        """返回视图行号（已含导航行的偏移），找不到是 -1。"""
+        """Return the view row (offset for the navigation row already included), or -1 if not found."""
         try:
             return self._paths.index(path) + self._offset()
         except ValueError:
@@ -121,7 +128,7 @@ class ThumbModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self._paths) + self._offset()
 
     def image_count(self) -> int:
-        """图片张数，不含导航行 —— 状态栏要报的是这个。"""
+        """Number of images, excluding the navigation row -- this is what the status bar reports."""
         return len(self._paths)
 
     def columnCount(self, parent=QModelIndex()) -> int:
@@ -168,7 +175,7 @@ class ThumbModel(QAbstractTableModel):
         if col == COL_NAME:
             return path.name
         if col == COL_DIMS:
-            w, h = image_size(path)          # 带缓存，滚动不会反复读文件头
+            w, h = image_size(path)          # cached, so scrolling does not re-read file headers repeatedly
             return f"{w}×{h}" if w and h else ""
         if col == COL_TYPE:
             return path.suffix.lstrip(".").upper()
@@ -210,11 +217,11 @@ class ThumbModel(QAbstractTableModel):
             self._thumbs[path] = self._make_broken(self._edge)
         else:
             self._thumbs[path] = QIcon(QPixmap.fromImage(img))
-        # index_of 返回的已经是视图行号，别再加一次偏移
+        # index_of already returns the view row number; don't add the offset again
         idx = self.index(row, COL_NAME)
         self.dataChanged.emit(idx, idx, [Qt.DecorationRole])
 
-    # -- 占位图 --
+    # -- Placeholder --
     @staticmethod
     def _make_placeholder(edge: int) -> QIcon:
         pm = QPixmap(edge, edge)
@@ -242,10 +249,12 @@ class ThumbModel(QAbstractTableModel):
 
 
 class ThumbDelegate(QStyledItemDelegate):
-    """自己画格子：图在上半区垂直居中，文件名固定贴底，选中高亮框住整格。
+    """Paints the cells ourselves: the image is vertically centered in the top half, the
+    filename is pinned to the bottom, and the selection highlight frames the whole cell.
 
-    交给 Qt 默认画的话，不同宽高比的缩略图会让文件名基线参差不齐，
-    选中框也只圈住文字 —— 一眼就是"没做完"的样子。
+    With Qt's default painting, thumbnails of different aspect ratios would leave the
+    filename baselines misaligned, and the selection box would only circle the text --
+    which looks like a "not finished" job at a glance.
     """
 
     def __init__(self, view: QListView, parent=None):
@@ -289,7 +298,7 @@ class ThumbDelegate(QStyledItemDelegate):
 
     @staticmethod
     def _elide(name: str, fm, width: int) -> str:
-        """两行放不下就中间省略 —— 扩展名比中间那截更值得保留。"""
+        """If it doesn't fit in two lines, elide the middle -- the extension is more worth keeping than the middle part."""
         if fm.horizontalAdvance(name) <= width * config.THUMB_LABEL_LINES:
             return name
         return fm.elidedText(name, Qt.ElideMiddle, width * config.THUMB_LABEL_LINES)

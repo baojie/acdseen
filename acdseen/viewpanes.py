@@ -1,15 +1,16 @@
-"""浏览器右侧的两个视图，以及它们之间的切换。
+"""The two views on the browser's right side, and switching between them.
 
-缩略图网格是 QListView（只显示第 0 列，自己画格子），详细列表是 QTreeView
-（多列 + 原生表头）。两者共用同一个模型和同一个选择模型，所以切视图时当前项
-和选中集自动同步，不用手动搬。
+The thumbnail grid is a QListView (only column 0 is shown, cells painted by our own
+delegate), and the detail list is a QTreeView (multi-column + native header). Both share
+the same model and the same selection model, so the current item and the selected set
+stay in sync automatically when switching views, without manual copying.
 
-其余代码只认 self._view —— 那是个属性，返回当前生效的那一个。
+All other code only knows self._view -- a property that returns whichever is active.
 
-依赖宿主提供：_loader _model _view_mode _thumb_edge _sort_key _sort_reverse
-             _sort_rev_act _view_acts _open_index() _update_status()
-             _on_selection_changed() _file_context_menu() _current_path()
-             _set_sort() eventFilter()
+Depends on the host providing: _loader _model _view_mode _thumb_edge _sort_key _sort_reverse
+                               _sort_rev_act _view_acts _open_index() _update_status()
+                               _on_selection_changed() _file_context_menu() _current_path()
+                               _set_sort() eventFilter()
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from .thumbmodel import COL_NAME, COLUMNS, ThumbDelegate, ThumbModel
 
 class ViewPanesMixin:
     def _build_views(self) -> None:
-        # 右：缩略图网格 / 详细列表，两个视图共用一个模型和一个选择模型
+        # Right: thumbnail grid / detail list, both views share one model and one selection model
         self._model = ThumbModel(self._loader, self)
 
         self._icon_view = QListView()
@@ -33,7 +34,7 @@ class ViewPanesMixin:
         self._icon_view.setViewMode(QListView.IconMode)
         self._icon_view.setResizeMode(QListView.Adjust)
         self._icon_view.setMovement(QListView.Static)
-        self._icon_view.setUniformItemSizes(True)   # 关键：避免 Qt 遍历全部项算尺寸
+        self._icon_view.setUniformItemSizes(True)   # key: avoid Qt iterating all items to compute sizes
         self._icon_view.setWordWrap(True)
         self._icon_view.setSpacing(6)
         self._icon_view.setItemDelegate(ThumbDelegate(self._icon_view, self))
@@ -44,7 +45,7 @@ class ViewPanesMixin:
         self._list_view.setUniformRowHeights(True)
         self._list_view.setAllColumnsShowFocus(True)
         self._list_view.setIconSize(QSize(config.LIST_THUMB_SIZE, config.LIST_THUMB_SIZE))
-        # 共享选择模型：两个视图的当前项和选中集自动同步，切视图不用手动搬
+        # Shared selection model: the two views' current item and selected set sync automatically, no manual copying when switching
         self._list_view.setSelectionModel(self._icon_view.selectionModel())
 
         hdr = self._list_view.header()
@@ -52,7 +53,7 @@ class ViewPanesMixin:
         hdr.setSortIndicatorShown(True)
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(QHeaderView.Interactive)
-        hdr.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)   # 名称吃掉剩余宽度
+        hdr.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)   # the name column eats the remaining width
         for i, (_t, _k, w) in enumerate(COLUMNS):
             if w:
                 self._list_view.setColumnWidth(i, w)
@@ -70,10 +71,11 @@ class ViewPanesMixin:
         sel = self._icon_view.selectionModel()
         sel.currentChanged.connect(self._update_status)
         sel.currentChanged.connect(self._on_selection_changed)
-        # 光连 currentChanged 不够：框选一片时当前项不变，"已选 N" 就永远不刷新
+        # Connecting only currentChanged is not enough: when marquee-selecting a range
+        # the current item does not change, so "N selected" would never refresh
         sel.selectionChanged.connect(self._update_status)
 
-        # 路径栏：原版右上角那个显示当前目录、右端带下拉箭头的凹陷框
+        # Path bar: the sunken box at the top-right in the original that shows the current directory, with a dropdown arrow at the right end
         self._path_bar = QComboBox()
         self._path_bar.setEditable(True)
         self._path_bar.setInsertPolicy(QComboBox.NoInsert)
@@ -92,12 +94,12 @@ class ViewPanesMixin:
         lay.addWidget(self._view_stack, 1)
         self._apply_view_mode()
 
-    # ------------------------------------------------------------- 路径栏
+    # ------------------------------------------------------------- Path bar
     def _sync_path_bar(self, directory) -> None:
-        """把路径栏刷成当前目录，下拉里列出各级祖先。
+        """Refresh the path bar to the current directory, listing each ancestor in the dropdown.
 
-        必须挡住信号：往 QComboBox 里塞条目会触发 activated，
-        不挡就会从 set_directory 里递归回 set_directory。
+        Signals must be blocked: stuffing items into a QComboBox triggers activated,
+        and without blocking it would recurse back into set_directory from set_directory.
         """
         bar = self._path_bar
         bar.blockSignals(True)
@@ -129,7 +131,7 @@ class ViewPanesMixin:
 
     @property
     def _view(self) -> QAbstractItemView:
-        """当前生效的那个视图。其余代码只认这个，不关心是网格还是列表。"""
+        """The currently active view. All other code only knows this one, and doesn't care whether it's a grid or a list."""
         return self._list_view if self._view_mode == config.VIEW_LIST else self._icon_view
 
     def _apply_grid(self) -> None:
@@ -140,7 +142,7 @@ class ViewPanesMixin:
         self._icon_view.setGridSize(QSize(edge + 22, edge + text_h + 12))
 
     def _apply_view_mode(self) -> None:
-        """在缩略图网格和详细列表之间切。模型不换，只换视图。"""
+        """Switch between the thumbnail grid and the detail list. The model stays; only the view changes."""
         if self._view_mode == config.VIEW_LIST:
             self._model.set_thumb_size(config.LIST_THUMB_SIZE)
         else:
@@ -157,7 +159,7 @@ class ViewPanesMixin:
         self._apply_view_mode()
         for act, m in getattr(self, "_view_acts", []):
             act.setChecked(m == mode)
-        if keep:                                 # set_thumb_size 会重置模型，选中项要找回来
+        if keep:                                 # set_thumb_size resets the model; the selection must be restored
             row = self._model.index_of(keep)
             if row >= 0:
                 idx = self._model.index(row, 0)
@@ -165,9 +167,9 @@ class ViewPanesMixin:
                 self._view.scrollTo(idx, QAbstractItemView.EnsureVisible)
         self._view.setFocus(Qt.OtherFocusReason)
 
-    # ------------------------------------------------------------- 表头排序
+    # ------------------------------------------------------------- Header sorting
     def _on_header_clicked(self, section: int) -> None:
-        """点表头排序：点当前列翻转正倒序，点别的列换排序键并回到正序。"""
+        """Click a header to sort: clicking the current column flips ascending/descending, clicking another column switches the sort key and returns to ascending."""
         if not 0 <= section < len(COLUMNS):
             return
         key = COLUMNS[section][1]
@@ -180,11 +182,11 @@ class ViewPanesMixin:
         self._set_sort(key)
 
     def _sync_sort_indicator(self) -> None:
-        """让表头的箭头跟上当前排序 —— 从菜单改的排序也要反映出来。
-        随机排序不对应任何一列，那就把箭头收掉。"""
+        """Keep the header arrow in sync with the current sort -- sorting changed from
+        the menu must show up too. Random sort maps to no column, so hide the arrow."""
         hdr = self._list_view.header()
         section = next((i for i, (_t, k, _w) in enumerate(COLUMNS) if k == self._sort_key), -1)
-        hdr.blockSignals(True)                   # setSortIndicator 不该再触发一次排序
+        hdr.blockSignals(True)                   # setSortIndicator should not trigger another sort
         if section < 0:
             hdr.setSortIndicatorShown(False)
         else:
@@ -199,7 +201,7 @@ class ViewPanesMixin:
 
     def _step_thumb(self, direction: int) -> None:
         if self._view_mode == config.VIEW_LIST:
-            # 列表模式的行高是固定的，改缩略图尺寸没有意义 —— 顺手切回去
+            # List-mode row height is fixed, so changing thumbnail size is pointless -- switch back while we're at it
             self._set_view_mode(config.VIEW_THUMBS)
             return
         sizes = config.THUMB_SIZES

@@ -1,13 +1,16 @@
-"""浏览器的文件操作：重命名、删除、复制、剪切、粘贴、复制到、移动到。
+"""Browser file operations: rename, delete, copy, cut, paste, copy to, move to.
 
-原版 ACDSee 1.2x 把这些直接内建在浏览器里，就是为了不用切回文件管理器。
+The original ACDSee 1.2x built these directly into the browser, precisely so you
+never had to switch back to a file manager.
 
-做成 mixin 而不是独立类：这些操作要读当前选中项、要刷新列表、要往状态栏
-写消息，和 Browser 的耦合是真实存在的，硬拆成"传一堆回调进去"只会更绕。
-mixin 至少把这一坨从主文件里挪出去，且 self 的用法一个字都不用改。
+Made a mixin rather than a standalone class: these operations read the current
+selection, refresh the list, and write to the status bar -- the coupling to
+Browser is real, and forcing it apart by "passing a bunch of callbacks" would
+only make it more convoluted. The mixin at least moves this chunk out of the
+main file, without changing a single character of how self is used.
 
-依赖宿主提供：_current_path() _selected_paths() _update_status() refresh()
-             _model _view _status _dir
+Expects the host to provide: _current_path() _selected_paths() _update_status() refresh()
+                             _model _view _status _dir
 """
 
 from __future__ import annotations
@@ -108,7 +111,7 @@ class FileOpsMixin:
         failed = []
         for p in paths:
             target = dest / p.name
-            # 这里的 resolve() 是对的：判断源和目标是不是同一个文件，必须穿透软链接
+            # The resolve() here is deliberate: deciding whether source and target are the same file must follow symlinks
             if target.resolve() == p.resolve():
                 continue
             target = self._unique_name(target)

@@ -1,4 +1,4 @@
-"""Win95 外观：调色板、样式表、以及那个会把 Qt 拖进无限递归的坑。"""
+"""Win95 look: palette, style sheet, and the pitfall that drags Qt into infinite recursion."""
 
 from __future__ import annotations
 
@@ -44,8 +44,9 @@ def test_关掉外观会清干净(qapp):
 
 
 def test_画树的分支不会无限递归(win95):
-    """回归：QStyle::proxy() 返回最外层代理，基础样式内部会绕回我们这里。
-    PE_IndicatorBranch 一旦留了"没画就回退 super()"的分支就会栈溢出。"""
+    """Regression: QStyle::proxy() returns the outermost proxy, and the base style
+    internally loops back to us. If PE_IndicatorBranch keeps a "fall back to
+    super() when not drawn" branch, it stack-overflows."""
     pm = QPixmap(40, 40); pm.fill(Qt.white)
     p = QPainter(pm)
     opt = QStyleOption(); opt.rect = QRect(0, 0, 20, 20)
@@ -55,7 +56,7 @@ def test_画树的分支不会无限递归(win95):
                   QStyle.State_Children | QStyle.State_Open,
                   QStyle.State_Item | QStyle.State_Sibling | QStyle.State_Children):
         opt.state = state
-        win95.style().drawPrimitive(QStyle.PE_IndicatorBranch, opt, p)   # 不该炸
+        win95.style().drawPrimitive(QStyle.PE_IndicatorBranch, opt, p)   # must not explode
     p.end()
 
 
@@ -79,14 +80,14 @@ def test_浏览器在win95外观下能正常绘制(win95, workdir):
         b._set_view_mode(mode)
         pump(win95, 800)
         pm = QPixmap(b.size())
-        b.render(pm)                      # 真画一遍，样式表写错这里就炸
+        b.render(pm)                      # actually render it; a bad style sheet blows up here
         assert not pm.isNull()
     b.close()
     pump(win95, 300)
 
 
 def test_预览窗格跟着调色板走(win95, workdir):
-    """回归：预览窗格原来硬编码深色，套上灰底主题会留一块突兀的黑。"""
+    """Regression: the preview pane used to hardcode a dark color, leaving an awkward black block under the gray theme."""
     b = Browser(workdir)
     b.resize(900, 600); b.show()
     pump(win95, 2000)
@@ -111,7 +112,7 @@ def test_菜单开关能来回切(qapp, workdir):
     theme.apply(qapp, False)
 
 
-# ------------------------------------------------------------------ 图标
+# ------------------------------------------------------------------ icons
 def test_像素网格都是16x16(qapp):
     for name, grid in (("closed", theme.FOLDER_CLOSED),
                        ("open", theme.FOLDER_OPEN),
@@ -143,7 +144,7 @@ def test_打开与闭合的文件夹不一样(qapp):
 
 
 def test_图标放大不糊(qapp):
-    """像素画只能最近邻放大，平滑一次就不是 Win95 了。"""
+    """Pixel art must only be scaled with nearest-neighbor; one smoothing pass and it's no longer Win95."""
     pm = theme.folder_pixmap(32, False)
     assert pm.size().width() == 32
     colors = {pm.toImage().pixelColor(x, y).name()
@@ -165,7 +166,7 @@ def test_目录树用上了win95图标(win95, workdir):
 
 
 def test_图标提供器有缓存(qapp):
-    """icon(QFileInfo) 每一行都会调一次，不缓存就是每帧重画几十个图标。"""
+    """icon(QFileInfo) is called once per row; without caching, dozens of icons get redrawn every frame."""
     prov = theme.Win95IconProvider()
     a = prov._icon("folder")
     b = prov._icon("folder")
@@ -173,8 +174,9 @@ def test_图标提供器有缓存(qapp):
 
 
 def test_界面字体关掉抗锯齿(win95):
-    """Win95 的界面字体是位图字体，一个像素都不糊。开着抗锯齿字发虚，
-    整个界面立刻"现代"了 —— 这是最影响年代感的一处。"""
+    """Win95's UI font is a bitmap font, not a single blurred pixel. With
+    antialiasing on, text goes fuzzy and the whole UI instantly looks "modern" --
+    this is the single biggest factor for the era feel."""
     from PySide6.QtGui import QFont
     assert theme.ui_font().styleStrategy() == QFont.NoAntialias
     assert win95.font().styleStrategy() == QFont.NoAntialias

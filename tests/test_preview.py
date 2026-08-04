@@ -1,4 +1,4 @@
-"""预览窗格：异步解码、信息行、容错、让路。"""
+"""Preview pane: asynchronous decoding, info line, fault tolerance, yielding."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ def test_显示选中图片(qapp, pics, pane):
 
 
 def test_信息行报原图尺寸而非预览尺寸(qapp, pics, pane):
-    """回归：预览图是按窗格大小缩过的，拿它的尺寸会报出错的数字。
+    """Regression: the preview image is scaled to the pane, so its size would report a wrong number.
 
-    4000×3000 的图在 300px 窗格里曾显示成 300×225，和状态栏对不上。
+    A 4000x3000 image in a 300px pane used to show as 300x225, mismatching the status bar.
     """
     big = pics / "IMG_002.bmp"          # 2400x1800
     pane.show_path(big)
@@ -38,7 +38,7 @@ def test_信息行报原图尺寸而非预览尺寸(qapp, pics, pane):
 
 
 def test_信息行在解码完成前就有尺寸(qapp, pics, pane):
-    """尺寸只读文件头，不必等像素解完。"""
+    """The size only reads the file header; no need to wait for pixels to decode."""
     pane.show_path(pics / "IMG_000.jpg")
     assert "1920×1080" in pane._info_line()
 
@@ -55,7 +55,7 @@ def test_损坏文件标记错误不崩溃(qapp, pics, pane):
     pane.show_path(pics / "broken.jpg")
     assert pump(qapp, 6000, lambda: pane._error)
     assert pane._img is None
-    pane.repaint()      # 错误态也得能画
+    pane.repaint()      # error state must be drawable too
 
 
 def test_clear清空(qapp, pics, pane):

@@ -1,4 +1,4 @@
-"""纯函数：格式化、排序、格式判定。不需要 GUI。"""
+"""Pure functions: formatting, sorting, format detection. No GUI needed."""
 
 from __future__ import annotations
 
@@ -20,17 +20,17 @@ def test_format_size(n, expected):
 
 
 def test_format_size_大数值不带小数():
-    # 三位数以上再带小数位就太吵了
+    # Decimal places above three digits would be too noisy
     assert format_size(500 * 1024) == "500 KB"
 
 
 def test_human_dims():
-    assert human_dims(800, 600) == "800×600"          # 不足 1MP 不显示
+    assert human_dims(800, 600) == "800×600"          # not shown below 1MP
     assert human_dims(4000, 3000) == "4000×3000 (12.0MP)"
 
 
 def test_is_image():
-    assert is_image(Path("a.JPG"))       # 大小写不敏感
+    assert is_image(Path("a.JPG"))       # case-insensitive
     assert is_image(Path("a.pcx"))
     assert not is_image(Path("a.txt"))
     assert not is_image(Path("a"))
@@ -44,7 +44,7 @@ def test_natural_key_数字按数值排序():
 def test_list_images_默认自然排序(pics):
     names = [p.name for p in list_images(pics)]
     assert names == sorted(names, key=natural_key)
-    # IMG_010 必须排在 IMG_007 之后 —— 字典序会把它排到 IMG_002 前面
+    # IMG_010 must sort after IMG_007 -- lexicographic order would put it before IMG_002
     assert names.index("IMG_010.jpg") > names.index("IMG_007.bmp")
 
 
@@ -70,7 +70,7 @@ def test_list_images_目录不存在不抛异常(tmp_path):
     assert list_images(tmp_path / "nope") == []
 
 
-# ------------------------------------------------------------------ 排序
+# ------------------------------------------------------------------ sorting
 def test_按宽高与像素总数排序(pics):
     from acdseen.util import image_size
     for key, metric in ((config.SORT_WIDTH, lambda p: image_size(p)[0]),
@@ -88,7 +88,7 @@ def test_尺寸排序倒序(pics):
 
 
 def test_读不出尺寸的文件不炸(pics):
-    """broken.jpg 读不出宽高，该当 0×0 排在最前，而不是抛异常。"""
+    """broken.jpg can't have its size read; it should be treated as 0x0 and sorted first, not raise."""
     order = list_images(pics, config.SORT_PIXELS)
     assert order[0].name == "broken.jpg"
 
@@ -114,5 +114,5 @@ def test_尺寸缓存按mtime失效(tmp_path, pics):
     shutil.copy(pics / "IMG_001.png", p)          # 800x600
     assert image_size(p) == (800, 600)
     shutil.copy(pics / "IMG_000.jpg", p.with_suffix(".jpg"))
-    shutil.copy(pics / "IMG_006.jpg", p)          # 换成 2560x1440，mtime 也变了
+    shutil.copy(pics / "IMG_006.jpg", p)          # swapped to 2560x1440, mtime changed too
     assert image_size(p) == (2560, 1440), "文件换了尺寸没跟着变，缓存 key 没带 mtime"

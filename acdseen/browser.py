@@ -1,18 +1,20 @@
-"""ACDSee Image Browser 的复刻：左边目录树，右边缩略图。
+"""A clone of ACDSee Image Browser: directory tree on the left, thumbnails on the right.
 
-刻意保留的原版特征：
-  * 只看一个目录，不递归、不建数据库、不扫全盘
-  * 文件操作（删/改名/复制/移动）直接内建，不用切回文件管理器
-  * 全键盘可达
+Original features deliberately kept:
+  * Only view one directory; no recursion, no database, no full-disk scan
+  * File operations (delete / rename / copy / move) built in, no need to switch
+    back to a file manager
+  * Fully reachable from the keyboard
 
-这个文件只留窗口骨架：目录树、分割布局、目录切换、选择、状态栏、设置持久化。
-其余按功能分了出去：
-  thumbmodel.py  多列模型（两个视图共用）+ 缩略图格子的绘制
-  viewpanes.py   缩略图网格 / 详细列表两个视图，切换与表头排序
-  menus.py       菜单栏、右键菜单、帮助与关于
-  fileops.py     文件操作（重命名 / 删除 / 复制 / 剪切 / 粘贴 / 复制到 / 移动到）
-  viewhost.py    浏览 ↔ 看图 的页面切换
-  helptext.py    F1 的快捷键表
+This file keeps only the window skeleton: directory tree, split layout, directory
+switching, selection, status bar, and settings persistence.
+The rest is split out by feature:
+  thumbmodel.py  the multi-column model (shared by both views) + thumbnail cell drawing
+  viewpanes.py   the thumbnail grid / detail list views, switching and header sorting
+  menus.py       menu bar, context menus, help and about
+  fileops.py     file operations (rename / delete / copy / cut / paste / copy to / move to)
+  viewhost.py    the browsing <-> viewing page switch
+  helptext.py    the F1 shortcut table
 """
 
 from __future__ import annotations
@@ -47,20 +49,24 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._dir = start_dir
         self._sort_key = config.SORT_NAME
         self._sort_reverse = False
-        self._sort_seed = 0          # 只对「随机」排序有意义，见 util.list_images
+        self._sort_seed = 0          # only meaningful for the "random" sort, see util.list_images
         self._clipboard: tuple[str, list[Path]] | None = None   # ("copy"|"cut", paths)
         self._viewer: Viewer | None = None
         self._view_mode = config.VIEW_THUMBS
-        self._thumb_edge = config.DEFAULT_THUMB_SIZE   # 图标模式用的边长，列表模式不覆盖它
+        self._thumb_edge = config.DEFAULT_THUMB_SIZE   # edge length used in icon mode; list mode does not override it
 
         self._loader = ThumbnailLoader(self)
         self._build_ui()
         self._build_menu()
         self._restore_state()
-        # 图标提供器必须无条件设一次：外观开关有默认值，光靠"设置里存过才应用"
-        # 的话，首次启动会是主题开着、但目录树图标没换的半吊子状态。
-        # 这里只碰自己的 QFileSystemModel，不去动全局样式 —— 那是入口和
-        # 用户手动切换该干的事，构造窗口时顺手改 app 级样式副作用太大。
+        # The icon provider must be set unconditionally once: the look toggle has a
+        # default value, so relying only on "applied only if stored in settings" would
+        # leave first launch in a half-baked state where the theme is on but the
+        # directory tree icons are not swapped.
+        # Here we only touch our own QFileSystemModel and leave the global style alone --
+        # changing app-level styles belongs to the entry point and manual user toggling,
+        # and mutating the app style while the window is being constructed has too many
+        # side effects.
         self._sync_icon_provider()
         self.set_directory(start_dir)
 
@@ -68,7 +74,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
     def _build_ui(self) -> None:
         self._splitter = QSplitter(Qt.Horizontal, self)
 
-        # 左：目录树
+        # Left: directory tree
         self._fs = QFileSystemModel(self)
         self._fs.setRootPath("")
         self._fs.setFilter(QDir.AllDirs | QDir.NoDotAndDotDot | QDir.Drives)
@@ -77,13 +83,13 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         for col in range(1, self._fs.columnCount()):
             self._tree.hideColumn(col)
         self._tree.setHeaderHidden(True)
-        self._tree.setAnimated(False)          # 动画只会拖慢感知速度
+        self._tree.setAnimated(False)          # animations only slow perceived speed
         self._tree.setExpandsOnDoubleClick(True)
         self._tree.selectionModel().currentChanged.connect(self._on_tree_changed)
 
         self._build_views()
 
-        # 左列：目录树 + 预览窗格（原版 preview pane 就在左下方）
+        # Left column: directory tree + preview pane (the original preview pane sat bottom-left)
         self._preview = PreviewPane()
         self._left_splitter = QSplitter(Qt.Vertical)
         self._left_splitter.addWidget(self._tree)
@@ -98,8 +104,9 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setSizes([260, 900])
 
-        # 浏览 / 看图 是同一个窗口的两页，不是两个窗口。
-        # 看图时窗口里只剩那张图 —— 这正是原版 Viewer 的样子，只是不再另开窗。
+        # Browsing / viewing are two pages of the same window, not two windows.
+        # While viewing, only the image remains in the window -- exactly what the
+        # original Viewer looked like, just without opening a separate window.
         self._stack = QStackedWidget()
         self._stack.addWidget(self._splitter)
         self.setCentralWidget(self._stack)
@@ -112,11 +119,12 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self.setStatusBar(self._status)
         self.resize(1180, 760)
 
-    # ------------------------------------------------------------- 目录
+    # ------------------------------------------------------------- Directory
     def set_directory(self, directory: Path) -> None:
-        # 只做词法规范化（展开 ~、去掉 ..、转绝对路径），绝不能用 resolve()：
-        # 它会跟着软链接走到真实路径，于是点软链接目录时树上会从你点的那一行
-        # 蹦到别处去 —— 看起来就是"点 A 跳到 B"。
+        # Only do lexical normalization (expand ~, strip .., make absolute); never use
+        # resolve(): it follows symlinks to the real path, so clicking a symlink
+        # directory would jump the tree from the row you clicked to somewhere else --
+        # looking like "clicking A jumps to B".
         directory = Path(os.path.abspath(os.path.expanduser(str(directory))))
         if not directory.is_dir():
             return
@@ -124,7 +132,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._loader.invalidate()
         files = list_images(directory, self._sort_key, self._sort_reverse,
                             self._sort_seed)
-        # 到根了就没有上级可去，那一行也不该出现
+        # At the root there is no parent to go to, so that row should not appear
         parent = directory.parent if directory.parent != directory else None
         self._model.set_paths(files, parent)
         self._sync_path_bar(directory)
@@ -132,13 +140,14 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         row = self._model.first_image_row()
         if row >= 0:
             self._view.setCurrentIndex(self._model.index(row, 0))
-        self._preview.show_path(self._current_path())   # 空目录时清空预览
+        self._preview.show_path(self._current_path())   # clears the preview when the directory is empty
         self._update_status()
 
         idx = self._fs.index(str(directory))
         if idx.isValid() and idx != self._tree.currentIndex():
-            # currentChanged 连在 selectionModel 上，拦 self._tree 的信号是拦不住的，
-            # 不拦对地方就会从 _on_tree_changed 里递归回 set_directory。
+            # currentChanged is connected to the selectionModel, so blocking signals on
+            # self._tree would not stop it; block the right place or it recurses back
+            # into set_directory from _on_tree_changed.
             sel = self._tree.selectionModel()
             sel.blockSignals(True)
             self._tree.setCurrentIndex(idx)
@@ -159,8 +168,8 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             self.set_directory(Path(path))
 
     def _set_sort(self, key: int) -> None:
-        # 再点一次「随机」= 重新洗牌。平时 seed 不动，删张图触发的 refresh()
-        # 才不会把整个网格重排一遍。
+        # Clicking "Random" again means reshuffle. The seed normally stays fixed so a
+        # refresh() triggered by deleting an image does not reorder the whole grid.
         if key == config.SORT_RANDOM:
             self._sort_seed = (self._sort_seed + 1) & 0xFFFFFFFF
         self._sort_key = key
@@ -173,7 +182,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self.refresh()
 
     def _toggle_tree(self) -> None:
-        """只收目录树，预览窗格留在原地。"""
+        """Collapse only the directory tree; the preview pane stays in place."""
         sizes = self._left_splitter.sizes()
         if sizes[0] > 0:
             self._tree_width = sizes[0]
@@ -183,8 +192,8 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             self._left_splitter.setSizes([w, max(160, sum(sizes) - w)])
 
     def _toggle_preview(self, checked: bool | None = None) -> None:
-        """菜单触发时 Qt 已经把 checked 翻好了传进来；
-        程序化调用（无参）则自己翻转，别让这个名字骗人。"""
+        """When triggered from the menu, Qt already toggled checked before calling us;
+        programmatic calls (no arg) toggle it themselves, so don't let the name fool you."""
         visible = (not self._preview.isVisible()) if checked is None else bool(checked)
         self._preview_act.setChecked(visible)
         self._preview.setVisible(visible)
@@ -198,9 +207,11 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._preview.show_path(self._current_path())
 
     def _sync_icon_provider(self) -> None:
-        """目录树的图标来自 QFileSystemModel 的 provider，换掉它整棵树就变黄。
+        """The directory tree's icons come from QFileSystemModel's provider; replacing it
+        turns the whole tree yellow.
 
-        自己留一份引用 —— setIconProvider 不接管所有权，被 GC 掉就是一片空白。
+        Keep our own reference -- setIconProvider does not take ownership, and if it gets
+        GC'd the tree goes blank.
         """
         from PySide6.QtWidgets import QFileIconProvider
         from . import theme
@@ -209,7 +220,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._fs.setIconProvider(self._icon_provider)
 
     def _toggle_win95(self, checked: bool | None = None) -> None:
-        """切 Win95 外观。样式是 app 级的，所以直接作用在 QApplication 上。"""
+        """Toggle the Win95 look. The style is app-level, so it is applied to QApplication directly."""
         from PySide6.QtWidgets import QApplication
         from . import theme
         on = (not self._win95_act.isChecked()) if checked is None else bool(checked)
@@ -219,9 +230,9 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             theme.apply(app, on)
         self._sync_icon_provider()
 
-    # ------------------------------------------------------------- 语言
+    # ------------------------------------------------------------- Language
     def _set_language(self, code: str) -> None:
-        """切界面语言：设置状态 → 持久化 → 立即刷新所有界面文本。"""
+        """Switch the UI language: set the state -> persist -> immediately refresh all UI text."""
         if i18n.current() == code:
             return
         i18n.set_language(code)
@@ -229,19 +240,20 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._retranslate()
 
     def _retranslate(self) -> None:
-        """切换语言后立即刷新：菜单、状态栏、标题、预览提示。"""
+        """Immediately refresh after switching language: menu, status bar, title, preview hint."""
         self._rebuild_menu()
         self._update_status()
         self.setWindowTitle(f"{self._dir} — {config.APP_NAME}")
-        self._preview.update()              # 预览窗格里的提示文字是画出来的
+        self._preview.update()              # the hint text in the preview pane is drawn
         if self._viewer:
-            self._viewer._update_title()    # 看图页开着时标题跟着换
+            self._viewer._update_title()    # when the viewer page is open, the title follows
 
     def _rebuild_menu(self) -> None:
-        """换语言后重建菜单栏。
+        """Rebuild the menu bar after a language change.
 
-        旧的窗口级 action 先 removeAction 摘掉，再清空菜单栏 —— 直接
-        menuBar().clear() 的话，注册在窗口上的快捷键和 action 会残留两份。
+        First remove the old window-level actions with removeAction, then clear the menu
+        bar -- a bare menuBar().clear() would leave the shortcuts and actions registered
+        on the window duplicated.
         """
         old_win95 = self._win95_act.isChecked()
         old_preview = self._preview_act.isChecked()
@@ -256,7 +268,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._resync_menu_state()
 
     def _resync_menu_state(self) -> None:
-        """重建菜单后把当前状态（视图模式 / 排序 / 倒序）落回新 action 上。"""
+        """After rebuilding the menu, put the current state (view mode / sort key / reverse) back onto the new actions."""
         for act, m in self._view_acts:
             act.setChecked(m == self._view_mode)
         self._sort_rev_act.setChecked(self._sort_reverse)
@@ -269,7 +281,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._status.showMessage(tr("msg.cache_cleared"), 2500)
 
     def eventFilter(self, obj, ev) -> bool:
-        """Enter 看图、Backspace 回上级。两个视图都装了这个过滤器。"""
+        """Enter views the image, Backspace goes to the parent. Both views have this filter installed."""
         if obj in (self._icon_view, self._list_view) and ev.type() == QEvent.KeyPress:
             if ev.key() in (Qt.Key_Return, Qt.Key_Enter):
                 self._open_current()
@@ -279,12 +291,12 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
                 return True
         return super().eventFilter(obj, ev)
 
-    # ------------------------------------------------------------- 选择
+    # ------------------------------------------------------------- Selection
     def _current_path(self) -> Path | None:
         return self._model.path_at(self._view.currentIndex())
 
     def _selected_paths(self) -> list[Path]:
-        # 列表模式下一行有 5 个 index（每列一个），按行号去重，否则同一个文件会被数 5 遍
+        # In list mode each row has 5 indexes (one per column); dedupe by row number, otherwise the same file would be counted 5 times
         rows = sorted({i.row() for i in self._view.selectedIndexes()})
         paths = [self._model.path_at(self._model.index(r, COL_NAME)) for r in rows]
         paths = [p for p in paths if p is not None]
@@ -294,11 +306,11 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
                 paths = [cur]
         return paths
 
-    # ------------------------------------------------------------- 状态栏
+    # ------------------------------------------------------------- Status bar
     def _update_status(self, *_) -> None:
-        total = self._model.image_count()      # 不含 ".." 那一行
-        # 按行数，不是 index 数（列表模式下一行有 5 个 index），
-        # 并且要排掉 ".." 那一行 —— 它不是图片
+        total = self._model.image_count()      # does not include the ".." row
+        # Count by rows, not by indexes (in list mode each row has 5 indexes),
+        # and exclude the ".." row -- it is not an image
         sel = len({i.row() for i in self._view.selectionModel().selectedIndexes()
                    if self._model.path_at(i) is not None})
         left = tr("status.images", total)
@@ -321,7 +333,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             pass
         self._status_right.setText("   ".join(bits))
 
-    # ------------------------------------------------------------- 状态保存
+    # ------------------------------------------------------------- State persistence
     def _restore_state(self) -> None:
         s = self._settings
         geo = s.value("geometry")
@@ -333,8 +345,8 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         left_sizes = s.value("left_splitter")
         if left_sizes:
             self._left_splitter.setSizes([int(x) for x in left_sizes])
-        # 注意：PySide6 里 value(key, type=bool) 在键缺失时返回 False 而非 None，
-        # 不能用 `is not None` 判断，必须查键是否存在。
+        # Note: in PySide6, value(key, type=bool) returns False (not None) when the key
+        # is missing, so you cannot test `is not None`; you must check whether the key exists.
         if s.contains("preview_visible"):
             visible = bool(s.value("preview_visible"))
             self._preview_act.setChecked(visible)
@@ -347,7 +359,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             self._view_mode = mode
             for act, m in self._view_acts:
                 act.setChecked(m == mode)
-        self._apply_view_mode()      # 一次把尺寸和视图模式都落到位
+        self._apply_view_mode()      # applies size and view mode in one go
         key = s.value("sort_key", type=int)
         if key in config.SORT_NAMES:
             self._sort_key = key
@@ -357,7 +369,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         self._sort_rev_act.setChecked(self._sort_reverse)
         for act, k in self._sort_acts:
             act.setChecked(k == self._sort_key)
-        self._sync_sort_indicator()   # 排序是最后才定下来的，箭头要在这之后再对一次
+        self._sync_sort_indicator()   # the sort key is settled last; the arrow must be re-synced after this
 
     def closeEvent(self, ev) -> None:
         s = self._settings
@@ -366,7 +378,7 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         s.setValue("left_splitter", self._left_splitter.sizes())
         s.setValue("preview_visible", self._preview_act.isChecked())
         s.setValue("win95_look", self._win95_act.isChecked())
-        s.setValue("thumb_size", self._thumb_edge)   # 列表模式下模型是 40，别存那个
+        s.setValue("thumb_size", self._thumb_edge)   # the model is 40 in list mode; don't save that
         s.setValue("view_mode", self._view_mode)
         s.setValue("sort_key", self._sort_key)
         s.setValue("sort_reverse", self._sort_reverse)

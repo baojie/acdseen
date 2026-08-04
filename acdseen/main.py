@@ -1,9 +1,10 @@
-"""入口。
+"""Entry point.
 
-用法：
-    acdseen              打开上次的目录（没有就是当前目录）
-    acdseen ~/Pictures   打开指定目录的浏览器
-    acdseen photo.jpg    直接全屏看这张图，并把同目录其他图排进列表
+Usage:
+    acdseen              open the last directory (or the current directory if none)
+    acdseen ~/Pictures   open the browser on the given directory
+    acdseen photo.jpg    view this image fullscreen immediately, with the other
+                         images in the same directory queued into the list
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .util import is_image, list_images
 
 
 def _init_language() -> None:
-    """定界面语言：读上次的选择，没有就跟随系统 locale。"""
+    """Determine the UI language: read the last selection, falling back to the system locale."""
     s = QSettings(config.ORG_NAME, config.APP_NAME)
     saved = s.value("language", type=str)
     i18n.set_language(saved if saved in i18n.LANG_NAMES else i18n.system_default())
@@ -32,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
 
     _init_language()
 
-    # 在建 QApplication 之前处理，否则 --help 会开出一个窗口来
+    # Handle this before creating QApplication, otherwise --help would pop up a window
     for flag in argv[1:]:
         if flag in ("-h", "--help"):
             print(i18n.tr("usage"), end="")
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
     app = QApplication(argv)
-    warmup()   # 主线程预热解码器，必须在任何工作线程起来之前
+    warmup()   # warm up the decoder on the main thread; must run before any worker thread starts
     app.setApplicationName(config.APP_NAME)
     app.setOrganizationName(config.ORG_NAME)
     app.setApplicationDisplayName(config.APP_NAME)
@@ -56,8 +57,9 @@ def main(argv: list[str] | None = None) -> int:
     args = [a for a in argv[1:] if not a.startswith("-")]
     target = Path(args[0]).expanduser() if args else None
 
-    # 直接给了一张图 —— 跳过浏览器，立刻全屏。这是最常用的路径，
-    # 也是"启动到出图"这条延迟链上唯一该被优化的场景。
+    # Given an image directly -- skip the browser and go fullscreen immediately.
+    # This is the most common path, and the only scene on the "startup to image"
+    # latency chain worth optimizing.
     if target and target.is_file() and is_image(target):
         from .viewer import Viewer
         directory = target.parent
@@ -65,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         index = files.index(target) if target in files else 0
         v = Viewer(files, index)
         v.showFullScreen()
-        # 独立模式下没有可返回的浏览页，Esc 就是退出
+        # In standalone mode there is no browser page to return to, so Esc exits
         v.exit_view.connect(lambda _p: v.close())
         v.closed.connect(lambda _p: app.quit())
         return app.exec()

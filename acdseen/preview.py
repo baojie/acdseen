@@ -1,13 +1,16 @@
-"""浏览器左下角的预览窗格 —— 当前选中图片的大图预览。
+"""The preview pane at the bottom-left of the browser -- a large preview of the currently selected image.
 
-原版 ACDSee 1.x 的 Preview Pane 可以在左 / 底 / 右三个位置配置，
-Mac 版 1.5.1 的默认布局就是左下角：目录树在上，预览在下。
+In the original ACDSee 1.x, the Preview Pane could be configured to the left / bottom /
+right positions; the default layout of the Mac 1.5.1 build is bottom-left: directory
+tree on top, preview below.
 
-做法和缩略图同源：后台线程解码 + generation 作废。但只开一个线程，
-一次只看一张，绝不为预览抢看图器的 CPU。
+The approach is the same as the thumbnails: background-thread decoding + generation
+invalidation. But only one thread is opened, and only one image is looked at at a time;
+it never steals CPU from the viewer.
 
-解码目标跟着窗格大小走（原版行为：预览区一变尺寸就自动重载），
-resize 用单发 QTimer 防抖，拖分割条不会疯狂解码。
+The decode target follows the pane size (original behavior: the preview reloads
+automatically whenever the preview area is resized), and resize uses a single-shot
+QTimer for debouncing, so dragging the splitter doesn't trigger a decoding frenzy.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from .i18n import tr
 from .loader import image_dimensions, load_image
 from .util import format_size, human_dims
 
-# 给窗格尺寸加的余量：目标边长稍大一点，缩放时不用抠得那么紧
+# Margin added to the pane size: make the target edge slightly larger so scaling doesn't have to be so exact
 _EDGE_MARGIN = 40
 
 
@@ -33,7 +36,7 @@ class _PreviewSignals(QObject):
 
 
 class _PreviewTask(QRunnable):
-    """解一张预览图。edge 按窗格大小给，解码器直接吐缩小版（快）。"""
+    """Decode one preview image. edge is given by the pane size; the decoder directly produces a downscaled version (fast)."""
 
     def __init__(self, path: Path, edge: int, signals: _PreviewSignals,
                  generation: int, current_gen):
@@ -53,26 +56,26 @@ class _PreviewTask(QRunnable):
 
 
 class PreviewPane(QWidget):
-    """当前选中图片的预览。图居中且不放大，底行显示文件名与尺寸。"""
+    """Preview of the currently selected image. The image is centered and not enlarged; the bottom line shows the filename and dimensions."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(140)
-        self.setAttribute(Qt.WA_OpaquePaintEvent)   # 每帧全重画，不闪
+        self.setAttribute(Qt.WA_OpaquePaintEvent)   # repaint the whole frame every time, no flicker
 
         self._path: Path | None = None
         self._img: QImage | None = None
-        self._dims: tuple[int, int] | None = None   # 原图尺寸，不是预览图的
+        self._dims: tuple[int, int] | None = None   # the original image's dimensions, not the preview's
         self._error = False
         self._generation = 0
         self._paused = False
 
         self._pool = QThreadPool(self)
-        self._pool.setMaxThreadCount(1)             # 预览一次只有一张
+        self._pool.setMaxThreadCount(1)             # only one image at a time for the preview
         self._signals = _PreviewSignals()
         self._signals.ready.connect(self._on_ready)
 
-        # resize 防抖：尺寸稳定 200ms 后才重新解码
+        # resize debounce: re-decode only after the size has been stable for 200ms
         self._resize_timer = QTimer(self)
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._reload_current)
@@ -80,14 +83,15 @@ class PreviewPane(QWidget):
     def _gen(self) -> int:
         return self._generation
 
-    # ------------------------------------------------------------- 对外接口
+    # ------------------------------------------------------------- Public interface
     def show_path(self, path: Path | None) -> None:
-        """切到新的选中项。None 表示没有选中（空目录）。"""
+        """Switch to the newly selected item. None means nothing is selected (empty directory)."""
         if path == self._path:
             return
         self._path = path
-        # 只读文件头，不解码像素 —— 信息行要报原图尺寸，
-        # 而 self._img 是按窗格大小缩过的，拿它的尺寸会报出错的数字。
+        # Read only the file header, don't decode pixels -- the info line must report
+        # the original dimensions, and self._img is scaled to the pane size, so its
+        # dimensions would report wrong numbers.
         self._dims = image_dimensions(path) if path is not None else None
         self._invalidate()
         self._request()
@@ -97,11 +101,13 @@ class PreviewPane(QWidget):
         self.show_path(None)
 
     def set_paused(self, paused: bool) -> None:
-        """看图器打开时让路：作废在飞任务；关掉后重新加载当前项。
+        """Yield when the viewer opens: invalidate in-flight tasks; reload the current
+        item when it closes.
 
-        必须是个持续状态，不能只作废一次 —— 切到看图页会让本窗格收到
-        resizeEvent，防抖定时器 200ms 后照样把解码拉起来，正好在看图器
-        最需要 CPU 的时候。"""
+        Must be a persistent state, not a one-shot invalidation -- switching to the
+        viewing page makes this pane receive a resizeEvent, and after 200ms the
+        debounce timer would kick decoding back up, right when the viewer needs the CPU
+        most."""
         if paused == self._paused:
             return
         self._paused = paused
@@ -112,13 +118,13 @@ class PreviewPane(QWidget):
         self.update()
 
     def shutdown(self) -> None:
-        """宿主销毁前调用：停掉防抖定时器，作废并等解码线程收尾。"""
-        self._paused = True      # 关窗途中还会有 resize，别再拉起新解码
+        """Call before the host is destroyed: stop the debounce timer, invalidate, and wait for the decode thread to finish."""
+        self._paused = True      # resizes can still arrive while closing; don't start new decodes
         self._resize_timer.stop()
         self._invalidate()
         self._pool.waitForDone(1000)
 
-    # ------------------------------------------------------------- 加载
+    # ------------------------------------------------------------- Loading
     def _need_edge(self) -> int:
         return max(96, self.width(), self.height()) + _EDGE_MARGIN
 
@@ -148,10 +154,10 @@ class PreviewPane(QWidget):
             self._img = img
         self.update()
 
-    # ------------------------------------------------------------- 绘制
+    # ------------------------------------------------------------- Painting
     def paintEvent(self, ev) -> None:
-        # 颜色全走调色板 —— 这样套上 Win95 外观时窗格跟着变灰白，
-        # 不会在一片灰底里留一块突兀的黑
+        # All colors go through the palette -- so when the Win95 look is applied the
+        # pane turns grayish-white with it, leaving no jarring black block in the gray
         pal = self.palette()
         p = QPainter(self)
         p.fillRect(self.rect(), pal.base())
@@ -176,7 +182,7 @@ class PreviewPane(QWidget):
         iw, ih = img.width(), img.height()
         if iw <= 0 or ih <= 0:
             return
-        s = min(area.width() / iw, area.height() / ih, 1.0)   # 不放大 —— 原版行为
+        s = min(area.width() / iw, area.height() / ih, 1.0)   # not enlarged -- original behavior
         w, h = max(1, int(iw * s)), max(1, int(ih * s))
         x = area.x() + (area.width() - w) // 2
         y = area.y() + (area.height() - h) // 2
@@ -188,7 +194,7 @@ class PreviewPane(QWidget):
         p.drawText(area, Qt.AlignCenter, text)
 
     def _paint_sunken_frame(self, p: QPainter, pal) -> None:
-        """Win95 的凹陷边：左上暗、右下亮。深色主题下这两色也自动跟着走。"""
+        """The Win95 sunken bevel: dark top-left, light bottom-right. These colors also follow the dark theme automatically."""
         w, h = self.width(), self.height()
         p.save()
         p.setPen(pal.color(QPalette.Shadow))

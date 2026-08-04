@@ -1,4 +1,4 @@
-"""看图器：导航、缩放模式、幻灯片、容错。"""
+"""Viewer: navigation, zoom modes, slideshow, fault tolerance."""
 
 from __future__ import annotations
 
@@ -68,11 +68,11 @@ def test_Home_End(qapp, viewer):
 
 
 def test_翻页时不清屏(qapp, viewer):
-    """核心手感：切到未缓存的图时，旧画面必须留在屏幕上直到新图解出来。"""
+    """Core feel: when switching to an uncached image, the old frame must stay on screen until the new one decodes."""
     before = viewer._image
     assert before is not None
 
-    # 清空 LRU，保证目标图确实没缓存 —— 否则预读会让它同步命中，测不到这条路径
+    # Clear the LRU to guarantee the target image isn't cached -- otherwise read-ahead would hit synchronously and this path wouldn't be exercised
     viewer._loader._lru.clear()
     viewer._goto(len(viewer._files) - 1)
 
@@ -81,7 +81,7 @@ def test_翻页时不清屏(qapp, viewer):
 
 
 def test_预读命中时同步换成新图(qapp, viewer):
-    """预读命中的另一面：不该保留旧图，应当立刻显示已缓存的新图。"""
+    """The flip side of a read-ahead hit: don't keep the old image, show the already-cached new one immediately."""
     target = viewer._files[1]
     assert pump(qapp, 6000, lambda: viewer._loader.cached(target) is not None)
     before = viewer._image
@@ -91,7 +91,7 @@ def test_预读命中时同步换成新图(qapp, viewer):
 
 
 def test_默认就把小图铺满显示框(qapp, pics):
-    """单页看图和幻灯放映都该占满窗口，不用先按 Z。"""
+    """Single-page viewing and slideshow should both fill the window without pressing Z first."""
     small = pics / "IMG_003.gif"           # 320x240
     v = Viewer([small], 0)
     v.resize(1600, 1200)
@@ -103,7 +103,7 @@ def test_默认就把小图铺满显示框(qapp, pics):
 
 
 def test_按星号切回原版的不放大(qapp, pics):
-    """* 保留 ACDSee 原版行为：小图保持原始尺寸。"""
+    """* keeps ACDSee's original behavior: small images stay at their original size."""
     small = pics / "IMG_003.gif"           # 320x240
     v = Viewer([small], 0)
     v.resize(1600, 1200)
@@ -198,7 +198,7 @@ def test_损坏文件标记错误不崩溃(qapp, pics):
     v.show()
     assert pump(qapp, 5000, lambda: v._error is not None)
     assert v._image is None
-    v.repaint()          # 错误态也必须能画出来
+    v.repaint()          # error state must be drawable too
     v.close()
 
 
@@ -244,7 +244,7 @@ def test_删除最后一张后请求退出(qapp, tmp_path, pics, monkeypatch):
 
 
 def test_Esc请求退出而不是自己关掉(qapp, viewer):
-    """看图器不决定自己的去留 —— 嵌在浏览器里是返回，独立开是退出。"""
+    """The viewer doesn't decide its own fate -- embedded in the browser it returns, standalone it exits."""
     exits = []
     viewer.exit_view.connect(lambda p: exits.append(p))
     press(viewer, Qt.Key_Escape)
@@ -285,7 +285,7 @@ def test_关闭时发出closed信号(qapp, pics):
     assert seen == [expected], "浏览器靠这个信号同步选中项"
 
 
-# ------------------------------------------------------------------ 幻灯片间隔
+# ------------------------------------------------------------------ slideshow interval
 def test_间隔可设任意秒数(viewer):
     viewer.set_delay(2.5)
     assert viewer._slideshow_delay == 2.5
@@ -293,7 +293,7 @@ def test_间隔可设任意秒数(viewer):
 
 
 def test_零秒不给定时器传0(viewer):
-    """真传 0 是空转烧 CPU。0 档给最小节拍，靠"没解完就不翻"踩刹车。"""
+    """Passing a real 0 would spin the CPU. The 0 notch uses the minimum tick and brakes by not advancing until decoded."""
     viewer.set_delay(0)
     assert viewer._slideshow_delay == 0
     assert viewer._interval_ms() == config.SLIDESHOW_ASAP_MS > 0
@@ -306,7 +306,7 @@ def test_零秒幻灯片跑起来且不跳帧(qapp, viewer):
     assert viewer._slideshow.isActive()
     start = viewer.current
     assert pump(qapp, 8000, lambda: viewer.current != start), "0 秒档应该真的往前翻"
-    # 守卫：上一张还没解出来就不许往前跑
+    # Guard: must not advance while the previous image hasn't decoded
     viewer._is_preview, viewer._image = True, None
     before = viewer._index
     viewer._slideshow_tick()
@@ -330,14 +330,14 @@ def test_档位循环含0秒(viewer):
 
 
 def test_任意值按档位增减先归位(viewer):
-    """用对话框设过 7 秒后按 ]，应该走到最接近的档位而不是乱跳。"""
+    """After setting 7 s via the dialog, pressing ] should snap to the nearest notch instead of jumping wildly."""
     viewer.set_delay(7)
     viewer._cycle_delay(+1)
     assert viewer._slideshow_delay in config.SLIDESHOW_DELAYS
     assert viewer._slideshow_delay == 5, "7 最接近 5，先归位到 5"
 
 
-# ------------------------------------------------------------------ 乱序
+# ------------------------------------------------------------------ shuffle
 def test_乱序不换掉当前这张(viewer):
     cur = viewer.current
     viewer.set_shuffle(True)
@@ -355,7 +355,7 @@ def test_关掉乱序还原原始顺序(viewer):
 
 
 def test_乱序确实打乱了顺序(qapp, pics):
-    """单次洗牌理论上可能洗回原样，多洗几次至少有一次不同。"""
+    """A single shuffle could theoretically return the same order; over many shuffles at least one differs."""
     files = [f for f in list_images(pics) if f.name != "broken.jpg"]
     assert len(files) >= 5, "样本太少，这条测试没意义"
     changed = False
@@ -372,7 +372,7 @@ def test_乱序确实打乱了顺序(qapp, pics):
 
 def test_乱序跑完一轮会重洗(qapp, viewer):
     viewer.set_shuffle(True)
-    viewer._index = len(viewer._files) - 1     # 站在最后一张
+    viewer._index = len(viewer._files) - 1     # stand on the last image
     before = list(viewer._files)
     viewer.next_image()
     pump(qapp, 300)
@@ -393,15 +393,15 @@ def test_乱序时删图不会让文件复活(qapp, workdir, monkeypatch):
     doomed = v.current
     v.delete_current()
     pump(qapp, 300)
-    v.set_shuffle(False)                       # 还原时按的是 _original_files
+    v.set_shuffle(False)                       # restore uses _original_files
     assert doomed not in v._files, "删掉的图不能靠关乱序复活"
     assert len(v._files) == len(files) - 1
     v.close()
 
 
-# ------------------------------------------------------------------ 缩放到显示框
+# ------------------------------------------------------------------ fit to display box
 def _small_pic(tmp_path):
-    """一张远小于窗口的图，用来区分「适应窗口」和「缩放到显示框」。"""
+    """An image far smaller than the window, used to distinguish "fit window" from "fit to display box"."""
     from PySide6.QtGui import QImage, QColor
     p = tmp_path / "small.png"
     img = QImage(120, 90, QImage.Format_RGB888)
@@ -428,7 +428,7 @@ def test_缩放到显示框会放大小图(qapp, tmp_path):
     v._set_fit(FIT_FILL)
     s = v._effective_scale()
     assert s > 1.0, "小图必须放大"
-    # 贴住短边：120x90 放进 1000x700 → 受高度限制
+    # Snug against the short edge: 120x90 in 1000x700 -> constrained by height
     assert s == pytest.approx(min(v.width() / 120, v.height() / 90))
     assert int(120 * s) <= v.width() and int(90 * s) <= v.height(), "不能超出显示框"
     v.close()
@@ -436,7 +436,7 @@ def test_缩放到显示框会放大小图(qapp, tmp_path):
 
 def test_缩放到显示框保持长宽比(qapp, tmp_path):
     v = Viewer([_small_pic(tmp_path)], 0)
-    v.resize(400, 900)          # 竖长窗口，和图的横长比例相反
+    v.resize(400, 900)          # tall narrow window, opposite aspect ratio to the image
     v.show()
     pump(qapp, 4000, lambda: v._image is not None)
     v._set_fit(FIT_FILL)
@@ -447,7 +447,7 @@ def test_缩放到显示框保持长宽比(qapp, tmp_path):
 
 
 def test_大图时两种模式一致(qapp, viewer):
-    """图比窗口大时，适应窗口和缩放到显示框算出来是同一个值。"""
+    """When the image is larger than the window, fit-window and fit-to-display-box compute the same value."""
     viewer._set_fit(FIT_WINDOW)
     a = viewer._effective_scale()
     viewer._set_fit(FIT_FILL)
@@ -456,7 +456,7 @@ def test_大图时两种模式一致(qapp, viewer):
 
 
 def test_缩放模式跨图保持(qapp, viewer):
-    """幻灯放映时选了缩放到显示框，每张都该铺满，不能翻一张就退回适应窗口。"""
+    """When fit-to-display-box is chosen during slideshow, every image should fill the box; flipping one must not revert to fit-window."""
     viewer._set_fit(FIT_FILL)
     viewer.next_image()
     pump(qapp, 4000, lambda: viewer._image is not None)
@@ -465,7 +465,7 @@ def test_缩放模式跨图保持(qapp, viewer):
 
 def test_手动缩放后翻页回到选定模式(qapp, viewer):
     viewer._set_fit(FIT_FILL)
-    viewer.zoom_by(+1)                 # 进入 FIT_FREE
+    viewer.zoom_by(+1)                 # enter FIT_FREE
     assert viewer._fit_mode == FIT_FREE
     viewer.next_image()
     pump(qapp, 4000, lambda: viewer._image is not None)
@@ -473,7 +473,7 @@ def test_手动缩放后翻页回到选定模式(qapp, viewer):
 
 
 def test_中键在适应模式和1比1之间来回(qapp, viewer):
-    """回归：切到 1:1 时 _base_fit 也会变成 1:1，直接读它就再也切不回来。"""
+    """Regression: switching to 1:1 also changes _base_fit to 1:1, so reading it directly can never switch back."""
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtCore import QEvent, QPointF
 

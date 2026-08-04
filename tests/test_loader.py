@@ -1,9 +1,10 @@
-"""解码层：两段式加载、预读、缩略图线程池、磁盘缓存。
+"""Decode layer: two-stage loading, read-ahead, thumbnail thread pool, disk cache.
 
-这里有三条测试直接对应开发期修过的真实 bug，删掉它们等于把坑重新挖开：
-  * test_多线程并发解码pcx不崩溃      —— Pillow 插件 lazy-import 撞崩 shiboken
-  * test_缩略图确实生成且尺寸正确      —— QImage.scaled 传 int 而非枚举，静默失败
-  * test_pil兜底不经过ImageQt         —— ImageQt 在工作线程碰 Qt binding 会炸
+Three tests here map directly to real bugs fixed during development; removing
+them would reopen those holes:
+  * concurrent multi-threaded PCX decode must not crash  -- Pillow plugin lazy-import crashed shiboken
+  * thumbnail is actually generated with the right size  -- QImage.scaled was passed an int instead of an enum, silently failing
+  * Pillow fallback must not go through ImageQt         -- ImageQt touching Qt bindings on a worker thread explodes
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from acdseen.loader import (HAVE_PIL, ImageLoader, ThumbnailLoader,
 from conftest import pump
 
 
-# ------------------------------------------------------------------ 同步解码
+# ------------------------------------------------------------------ synchronous decoding
 def test_load_image_各格式都能解(pics):
     for p in sorted(pics.glob("IMG_*")):
         img = load_image(p)
@@ -50,9 +51,10 @@ def test_pil兜底能解pcx(pics):
 
 @pytest.mark.skipif(not HAVE_PIL, reason="未安装 Pillow")
 def test_pil兜底不经过ImageQt():
-    """回归：PIL.ImageQt 在工作线程里碰 Qt binding 会导致进程级崩溃。
+    """Regression: PIL.ImageQt touching Qt bindings on a worker thread causes a process-level crash.
 
-    loader 必须自己从原始字节构造 QImage，绝不能重新引入 ImageQt。
+    The loader must construct the QImage from raw bytes itself and never
+    reintroduce ImageQt.
     """
     import acdseen.loader as L
     assert not hasattr(L, "ImageQt"), "不要再引入 PIL.ImageQt"
@@ -60,7 +62,7 @@ def test_pil兜底不经过ImageQt():
     assert "from PIL.ImageQt" not in src and "import ImageQt" not in src
 
 
-# ------------------------------------------------------------------ 两段式
+# ------------------------------------------------------------------ two-stage
 def test_大图走两段式_先preview后full(qapp, pics):
     loader = ImageLoader()
     events = []
@@ -68,7 +70,7 @@ def test_大图走两段式_先preview后full(qapp, pics):
     loader.full_ready.connect(lambda p, i: events.append(("full", i.size())))
 
     big = pics / "IMG_002.bmp"          # 2400x1800 > PREVIEW_EDGE
-    assert loader.load(big) is None     # 冷缓存，同步返回 None
+    assert loader.load(big) is None     # cold cache, returns None synchronously
     assert pump(qapp, 6000, lambda: any(k == "full" for k, _ in events))
 
     kinds = [k for k, _ in events]
@@ -88,7 +90,7 @@ def test_小图不发preview(qapp, pics):
     loader.preview_ready.connect(lambda p, i: events.append("preview"))
     loader.full_ready.connect(lambda p, i: events.append("full"))
 
-    loader.load(pics / "IMG_003.gif")   # 320x240，小于 PREVIEW_EDGE
+    loader.load(pics / "IMG_003.gif")   # 320x240, below PREVIEW_EDGE
     assert pump(qapp, 4000, lambda: "full" in events)
     assert "preview" not in events, "小图多解一遍是纯浪费"
     loader.shutdown()
@@ -99,7 +101,7 @@ def test_缓存命中时同步返回(qapp, pics):
     p = pics / "IMG_001.png"
     loader.load(p)
     assert pump(qapp, 4000, lambda: loader.cached(p) is not None)
-    # 第二次必须同步拿到 —— 这就是翻页零延迟
+    # The second call must return synchronously -- that's zero-latency paging
     assert loader.load(p) is not None
     loader.shutdown()
 
@@ -142,9 +144,9 @@ def test_drop清掉缓存项(qapp, pics):
     loader.shutdown()
 
 
-# ------------------------------------------------------------------ 缩略图
+# ------------------------------------------------------------------ thumbnails
 def test_缩略图确实生成且尺寸正确(qapp, pics):
-    """回归：QImage.scaled 曾经被传了 int 而非 Qt 枚举，任务静默抛异常。"""
+    """Regression: QImage.scaled was once passed an int instead of a Qt enum, so the task silently threw."""
     loader = ThumbnailLoader()
     got = {}
     loader.ready.connect(lambda p, i: got.__setitem__(p, i))
@@ -162,9 +164,10 @@ def test_缩略图确实生成且尺寸正确(qapp, pics):
 
 
 def test_多线程并发解码pcx不崩溃(qapp, pics):
-    """回归：Pillow 的插件 lazy-import 在多工作线程下会撞崩 shiboken。
+    """Regression: Pillow's plugin lazy-import crashed shiboken under multiple worker threads.
 
-    这条测试的价值在于"进程还活着"——崩溃时它连断言都执行不到。
+    This test's value is that "the process is still alive" -- when it crashes,
+    it never even reaches the assertion.
     """
     if not (pics / "IMG_008.pcx").exists():
         pytest.skip("无 pcx 样本")
@@ -200,7 +203,7 @@ def test_缩略图缓存随mtime失效(qapp, workdir):
     assert pump(qapp, 8000, lambda: bool(got))
     before = len(list(config.CACHE_DIR.rglob("*.png")))
 
-    os.utime(target, (0, 0))    # 假装文件被改过
+    os.utime(target, (0, 0))    # pretend the file was modified
     got.clear()
     loader.request(target, 96)
     assert pump(qapp, 8000, lambda: bool(got))
@@ -243,6 +246,6 @@ def test_invalidate作废在飞任务(qapp, pics):
         loader.request(f, 160)
     loader.invalidate()
     pump(qapp, 1500)
-    # 作废后不保证一个都不到（已在跑的可能刚好完成），但不该全部到齐
+    # After invalidate, not guaranteed that none arrive (an in-flight one may finish), but not all should arrive
     assert len(got) < len(list(pics.glob("IMG_*")))
     loader.shutdown()

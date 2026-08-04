@@ -1,4 +1,4 @@
-"""小工具函数。"""
+"""Small utility functions."""
 
 from __future__ import annotations
 
@@ -34,11 +34,12 @@ def is_image(path: Path) -> bool:
 
 def list_images(directory: Path, sort_key: int = config.SORT_NAME,
                 reverse: bool = False, seed: int = 0) -> list[Path]:
-    """列出目录里的图片，按指定方式排序。不递归 —— 原版就是一次一个目录。
+    """List the images in a directory, sorted as requested. Non-recursive --
+    the original only ever showed one directory at a time.
 
-    seed 只对「随机」排序有意义：同一个 seed 排出来的顺序是固定的，
-    所以删一张图触发的 refresh() 不会把整个网格重洗一遍。想换一副新
-    牌就换个 seed。
+    seed only matters for "random" sorting: a given seed always produces the
+    same order, so a refresh() triggered by deleting an image won't reshuffle
+    the whole grid. Use a new seed to get a new deal.
     """
     try:
         entries = [p for p in directory.iterdir() if p.is_file() and is_image(p)]
@@ -46,7 +47,7 @@ def list_images(directory: Path, sort_key: int = config.SORT_NAME,
         return []
 
     if sort_key == config.SORT_RANDOM:
-        # 先按名称定序再洗，保证同一个 seed 在任何文件系统上都排出同一个结果
+        # sort by name first, then shuffle, so the same seed yields the same result on any filesystem
         entries.sort(key=lambda p: natural_key(p.name))
         random.Random(seed).shuffle(entries)
         if reverse:
@@ -75,13 +76,15 @@ def list_images(directory: Path, sort_key: int = config.SORT_NAME,
     return sorted(entries, key=key, reverse=reverse)
 
 
-# 读文件头拿尺寸不便宜（几百个文件就是几百次 open），按 路径+mtime 缓存一份。
-# 文件变了 mtime 就变，key 自然失效，不用手动清。
+# Reading the file header for dimensions is not cheap (hundreds of files means
+# hundreds of opens), so cache by path + mtime. When the file changes its mtime
+# changes, the key invalidates naturally, and no manual clearing is needed.
 _DIMS_CACHE: dict[tuple[str, float], tuple[int, int]] = {}
 
 
 def image_size(path: Path) -> tuple[int, int]:
-    """图片的像素宽高。读不出来就当 0×0 —— 排序时沉到最前，不抛异常。"""
+    """Pixel width and height of an image. If it can't be read, treat as 0x0 --
+    it sinks to the front of the sort without raising."""
     try:
         mtime = path.stat().st_mtime
     except OSError:
@@ -90,16 +93,17 @@ def image_size(path: Path) -> tuple[int, int]:
     hit = _DIMS_CACHE.get(ck)
     if hit is not None:
         return hit
-    from .loader import image_dimensions      # 延迟导入：util 不该在导入期拖上 Qt
+    from .loader import image_dimensions      # deferred import: util shouldn't pull in Qt at import time
     dims = image_dimensions(path) or (0, 0)
-    if len(_DIMS_CACHE) > 20000:              # 只是个防失控的上限，不做 LRU
+    if len(_DIMS_CACHE) > 20000:              # just a runaway guard, not an LRU
         _DIMS_CACHE.clear()
     _DIMS_CACHE[ck] = dims
     return dims
 
 
 def natural_key(name: str):
-    """自然排序：IMG_2 排在 IMG_10 前面。当年的 ACDSee 没做，但今天不做说不过去。"""
+    """Natural sort: IMG_2 comes before IMG_10. ACDSee of that era didn't do it,
+    but there's no excuse not to today."""
     import re
     return [int(t) if t.isdigit() else t.lower()
             for t in re.split(r"(\d+)", name)]

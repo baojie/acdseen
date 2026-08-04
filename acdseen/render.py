@@ -1,12 +1,13 @@
-"""看图器的绘制：图像本体 + OSD 叠层。
+"""Viewer rendering: the image itself plus an OSD overlay.
 
-原版 Viewer 屏幕上除了图什么都没有，所以这里没有工具栏也没有状态栏，
-信息全走左下角那个可开关的半透明叠层。
+The original Viewer showed nothing but the image on screen, so there is no toolbar
+or status bar here -- all information goes through the toggleable translucent
+overlay in the bottom-left corner.
 
-依赖宿主提供：_pixmap _scaled _scaled_for _image _error _offset
-             _show_osd _transient _osd_timer _index _files _is_preview
-             _shuffle _slideshow _slideshow_delay
-             current _effective_scale() format_delay() _invalidate_scaled()
+Expects the host to provide: _pixmap _scaled _scaled_for _image _error _offset
+                             _show_osd _transient _osd_timer _index _files _is_preview
+                             _shuffle _slideshow _slideshow_delay
+                             current _effective_scale() format_delay() _invalidate_scaled()
 """
 
 from __future__ import annotations
@@ -36,12 +37,13 @@ class RenderMixin:
             iw = max(1, int(self._pixmap.width() * scale))
             ih = max(1, int(self._pixmap.height() * scale))
 
-            # 缩小时预先重采样一次并缓存，之后每帧只是 blit
+            # Pre-resample once when shrinking and cache it; every frame after is just a blit
             key = (round(scale, 4), iw, ih)
             if self._scaled_for != key:
-                # 缩小、以及 2 倍以内的放大都用平滑插值 —— "缩放到显示框"
-                # 基本都落在这个区间，用最近邻会糊成马赛克。
-                # 再往上是在看像素，最近邻反而更快也更该保留原样。
+                # Use smooth interpolation for downscaling and for upscaling up
+                # to 2x -- "fit to window" mostly lands in this range, and nearest
+                # neighbor would blur into mosaics. Beyond that you are inspecting
+                # pixels, where nearest neighbor is faster and preserves detail better.
                 mode = Qt.FastTransformation if scale > 2.0 else Qt.SmoothTransformation
                 if abs(scale - 1.0) < 1e-6:
                     self._scaled = self._pixmap

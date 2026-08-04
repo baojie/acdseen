@@ -1,11 +1,12 @@
-"""浏览 ↔ 看图 的页面切换。
+"""The browsing <-> viewing page switch.
 
-浏览和看图是同一个窗口的两页（QStackedWidget），不是两个窗口。看图时窗口里
-只剩那张图 —— 这正是原版 Viewer 的样子，只是不再另开窗，也就不必在退出时
-靠 activateWindow() 抢焦点。
+Browsing and viewing are two pages of the same window (QStackedWidget), not two
+windows. While viewing, only the image remains in the window -- exactly what the
+original Viewer looked like, just without opening another window, so there is no need
+to fight for focus with activateWindow() on exit.
 
-依赖宿主提供：_model _view _stack _splitter _status _loader _preview
-             _browse_actions _dir _update_status()
+Depends on the host providing: _model _view _stack _splitter _status _loader _preview
+                               _browse_actions _dir _update_status()
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .viewer import Viewer
 
 class ViewHostMixin:
     def _open_index(self, index: QModelIndex) -> None:
-        """双击 / 回车。点在 ".." 上是回上级，不是看图。"""
+        """Double-click / Enter. Clicking on ".." goes to the parent, not to the viewer."""
         if self._model.is_parent_row(index):
             self._go_parent()
             return
@@ -35,8 +36,9 @@ class ViewHostMixin:
             self._open_index(idx)
 
     def _start_slideshow(self, start: int = 0) -> None:
-        """从第 start 张开始全屏幻灯演示。start 是图片下标，不是视图行号 ——
-        有 ".." 行时两者差 1，用错的话每次都会从第二张开始。"""
+        """Start a fullscreen slideshow from image number start. start is the image
+        index, not the view row -- with a ".." row they differ by 1, and using the
+        wrong one would always start from the second image."""
         n = self._model.image_count()
         if n == 0:
             return
@@ -49,14 +51,14 @@ class ViewHostMixin:
         return self._viewer is not None
 
     def _open_viewer(self, index: int) -> Viewer | None:
-        """切到看图页。同一个窗口，不开新窗。"""
+        """Switch to the viewing page. Same window, no new window."""
         files = self._model.paths()
         if not files:
             return None
         if self._viewer is not None:
             self._close_viewer()
 
-        self._loader.set_paused(True)          # 把 CPU 让给看图器
+        self._loader.set_paused(True)          # yield the CPU to the viewer
         self._preview.set_paused(True)
         v = Viewer(files, index)
         v.exit_view.connect(self._on_exit_view)
@@ -65,10 +67,10 @@ class ViewHostMixin:
 
         self._stack.addWidget(v)
         self._stack.setCurrentWidget(v)
-        # 浏览器的 Del / Enter / F5 等快捷键会抢走看图器的按键，先关掉
+        # The browser's Del / Enter / F5 shortcuts would steal keys from the viewer, so disable them first
         for a in self._browse_actions:
             a.setEnabled(False)
-        self._status.hide()                     # 看图时信息走 OSD，状态栏是多余的
+        self._status.hide()                     # while viewing, info goes through the OSD; the status bar is redundant
         v.setFocus(Qt.OtherFocusReason)
         return v
 
@@ -83,7 +85,7 @@ class ViewHostMixin:
         self._view.setFocus(Qt.OtherFocusReason)
 
     def _close_viewer(self) -> None:
-        """拆掉看图页，回到缩略图页。"""
+        """Tear down the viewing page and return to the thumbnail page."""
         v, self._viewer = self._viewer, None
         if v is not None:
             v.teardown()
@@ -103,7 +105,7 @@ class ViewHostMixin:
         self._update_status()
 
     def changeEvent(self, ev) -> None:
-        """全屏看图时把菜单栏也收掉 —— 屏幕上只该剩那张图。"""
+        """Also hide the menu bar while viewing fullscreen -- only the image should remain on screen."""
         if ev.type() == QEvent.WindowStateChange and self._viewer is not None:
             self.menuBar().setVisible(not self.isFullScreen())
         super().changeEvent(ev)

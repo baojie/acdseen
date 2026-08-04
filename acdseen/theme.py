@@ -1,16 +1,20 @@
-"""Windows 95 外观。
+"""Windows 95 look.
 
-照着 ACDSee 2.x 在 Win95 上的样子做：#C0C0C0 灰底，控件一律 2px 立体边框
-（左上白 / 右下深灰，凹陷时反过来），整行 #000080 深蓝选中配白字，表头是
-一排凸起的按钮，滚动条是带方块箭头的槽。
+Done the way ACDSee 2.x looked on Win95: #C0C0C0 grey background, every control
+gets a 2px beveled border (top-left white / bottom-right dark grey, reversed
+when pressed), a full row of #000080 dark-blue selection with white text,
+headers that are a row of raised buttons, and scrollbars that are a groove
+with square arrow buttons.
 
-分两半：
-  * QPalette + 样式表 —— 颜色和大部分边框
-  * Win95Style       —— 样式表画不了的东西：树的 +/- 方框与虚线连接线、
-                        滚动条箭头、表头的立体棱。这些在 Qt 里都是
-                        primitive element，只能画。
+Split in two:
+  * QPalette + style sheet -- colors and most borders
+  * Win95Style            -- what the style sheet can't draw: the tree's
+                             +/- boxes and dotted connector lines, scrollbar
+                             arrows, the header's beveled ridge. In Qt these
+                             are all primitive elements and can only be drawn.
 
-全屏看图器不套这一层：原版 Viewer 就是纯黑铺满，套上灰边反而不对。
+The fullscreen viewer doesn't get this treatment: the original Viewer was pure
+black, and putting grey chrome on it would be wrong.
 """
 
 from __future__ import annotations
@@ -20,14 +24,14 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPen, QPixma
 from PySide6.QtWidgets import (QApplication, QFileIconProvider, QProxyStyle,
                                QStyle, QStyleFactory)
 
-# Win95 的那套系统色，一个都不能调
-FACE = "#c0c0c0"        # 3D 控件表面
-LIGHT = "#ffffff"       # 高光（左上外沿）
-SHADOW = "#808080"      # 阴影（右下内沿）
-DKSHADOW = "#000000"    # 深阴影（右下外沿）
-WINDOW = "#ffffff"      # 文档区底色
+# Win95's system colors -- none of them can be adjusted
+FACE = "#c0c0c0"        # 3D control surface
+LIGHT = "#ffffff"       # highlight (top-left outer edge)
+SHADOW = "#808080"      # shadow (bottom-right inner edge)
+DKSHADOW = "#000000"    # deep shadow (bottom-right outer edge)
+WINDOW = "#ffffff"      # document area background
 TEXT = "#000000"
-HILIGHT = "#000080"     # 选中条那个海军蓝
+HILIGHT = "#000080"     # the navy blue selection bar
 HILIGHT_TEXT = "#ffffff"
 GRAYTEXT = "#808080"
 
@@ -49,11 +53,11 @@ def win95_palette() -> QPalette:
     p.setColor(QPalette.Mid, c(SHADOW))
     p.setColor(QPalette.Dark, c(SHADOW))
     p.setColor(QPalette.Shadow, c(DKSHADOW))
-    p.setColor(QPalette.ToolTipBase, c("#ffffe1"))    # 那个著名的淡黄提示框
+    p.setColor(QPalette.ToolTipBase, c("#ffffe1"))    # the famous pale-yellow tooltip
     p.setColor(QPalette.ToolTipText, c(TEXT))
     for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
         p.setColor(QPalette.Disabled, role, c(GRAYTEXT))
-    # 失焦时选中条变灰 —— Win95 就是这么干的
+    # the selection bar turns grey when unfocused -- that's how Win95 did it
     p.setColor(QPalette.Inactive, QPalette.Highlight, c(SHADOW))
     p.setColor(QPalette.Inactive, QPalette.HighlightedText, c(LIGHT))
     return p
@@ -65,7 +69,7 @@ QMainWindow, QWidget {{
     color: {TEXT};
 }}
 
-/* 文档区：白底 + 凹陷边框，这是 Win95 里"可编辑内容"的标志 */
+/* document area: white + sunken border, the Win95 mark of "editable content" */
 QListView, QTreeView, QAbstractScrollArea {{
     background: {WINDOW};
     border: 2px solid {FACE};
@@ -75,7 +79,7 @@ QListView, QTreeView, QAbstractScrollArea {{
     border-bottom-color: {LIGHT};
 }}
 QListView::item {{ border: 0; padding: 0px 2px; }}
-/* 列表的竖分隔线：原版每列之间都有一道浅灰，一直贯到底 */
+/* list vertical separator: the original had a light grey line between every column, running the full height */
 QTreeView::item {{
     border: 0;
     border-right: 1px solid #d4d0c8;
@@ -86,7 +90,7 @@ QListView::item:selected, QTreeView::item:selected {{
     color: {HILIGHT_TEXT};
 }}
 
-/* 表头：一排凸起的按钮，右边和下边留深棱 */
+/* header: a row of raised buttons with a dark bevel on the right and bottom */
 QHeaderView {{
     background: {FACE};
     border: 0;
@@ -109,7 +113,7 @@ QHeaderView::section:pressed {{
     padding: 3px 3px 1px 5px;
 }}
 
-/* 菜单栏：平的，只有划过和展开时才凸/凹 */
+/* menu bar: flat; only raises or sinks when hovered or opened */
 QMenuBar {{
     background: {FACE};
     border-bottom: 1px solid {FACE};
@@ -148,7 +152,7 @@ QMenu::separator {{
 }}
 QMenu::indicator {{ width: 12px; height: 12px; margin-left: 4px; }}
 
-/* 状态栏：凹陷的分格 */
+/* status bar: sunken segment */
 QStatusBar {{
     background: {FACE};
     border-top: 1px solid {LIGHT};
@@ -161,7 +165,7 @@ QStatusBar QLabel {{
 }}
 QStatusBar::item {{ border: 0; }}
 
-/* 滚动条：方槽 + 凸起滑块，箭头交给 Win95Style 画 */
+/* scrollbar: square groove + raised handle; the arrows are drawn by Win95Style */
 QScrollBar:vertical, QScrollBar:horizontal {{
     background: #dfdfdf;
     border: 0;
@@ -193,7 +197,7 @@ QScrollBar::add-line:horizontal {{ width: 16px; subcontrol-position: right; }}
 QScrollBar::sub-line:horizontal {{ width: 16px; subcontrol-position: left; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: #dfdfdf; }}
 
-/* 分割条：就是一片灰，没有把手 */
+/* splitter: just a patch of grey, no handle */
 QSplitter::handle {{ background: {FACE}; }}
 
 QPushButton {{
@@ -221,7 +225,7 @@ QLineEdit {{
     border-bottom-color: {LIGHT};
     padding: 2px;
 }}
-/* 路径栏：凹陷输入框 + 右端一个凸起的下拉按钮 */
+/* path bar: sunken input + a raised drop-down button at the right end */
 QComboBox {{
     background: {WINDOW};
     border: 2px solid {FACE};
@@ -258,12 +262,13 @@ QToolTip {{
 
 
 class Win95Style(QProxyStyle):
-    """补样式表画不了的几处 primitive。"""
+    """Paints the few primitives the style sheet can't handle."""
 
-    # 这几个 element 必须"无条件"接管，绝不能回退到 super()：QStyle::proxy()
-    # 返回的是最外层代理，基础样式内部画子部件时会通过它绕回这里，同一个
-    # element 一旦有回退分支就会无限递归。
-    _OWNED = None      # 延迟初始化，见 drawPrimitive
+    # These elements must be taken over "unconditionally" and must never fall
+    # back to super(): QStyle::proxy() returns the outermost proxy, and when the
+    # base style draws sub-widgets internally it routes back here through it;
+    # if an element had a fallback branch it would recurse infinitely.
+    _OWNED = None      # lazy init, see drawPrimitive
 
     def drawPrimitive(self, element, opt, painter, widget=None) -> None:
         pe = QStyle.PrimitiveElement
@@ -281,7 +286,7 @@ class Win95Style(QProxyStyle):
             return
         super().drawPrimitive(element, opt, painter, widget)
 
-    # -- 目录树的 +/- 方框与虚线 --
+    # -- the tree's +/- boxes and dotted lines --
     def _draw_branch(self, opt, painter) -> None:
         r = opt.rect
         state = opt.state
@@ -293,7 +298,7 @@ class Win95Style(QProxyStyle):
 
         cx, cy = r.center().x() + 1, r.center().y() + 1
         painter.save()
-        # 虚线：Win95 是隔像素点一个点，不是 Qt 默认的 DashLine
+        # dotted line: Win95 dots every other pixel, not Qt's default DashLine
         pen = QPen(QColor(SHADOW)); pen.setStyle(Qt.DotLine)
         painter.setPen(pen)
         if is_item:
@@ -309,12 +314,12 @@ class Win95Style(QProxyStyle):
             x, y = cx - box // 2, cy - box // 2
             painter.drawRect(x, y, box - 1, box - 1)
             painter.setPen(QColor(TEXT))
-            painter.drawLine(x + 2, cy, x + box - 3, cy)          # 横杠
+            painter.drawLine(x + 2, cy, x + box - 3, cy)          # horizontal bar
             if not (state & QStyle.StateFlag.State_Open):
-                painter.drawLine(cx, y + 2, cx, y + box - 3)      # 竖杠 → 变成 +
+                painter.drawLine(cx, y + 2, cx, y + box - 3)      # vertical bar -> becomes a +
         painter.restore()
 
-    # -- 滚动条上那种实心小三角 --
+    # -- the solid little triangle on scrollbars --
     def _draw_arrow(self, element, opt, painter) -> None:
         pe = QStyle.PrimitiveElement
         r = opt.rect
@@ -334,8 +339,8 @@ class Win95Style(QProxyStyle):
         painter.restore()
 
 
-# ---------------------------------------------------------------- 图标
-# Win95 图标的全部用色就这几个：黑描边、亮黄面、橄榄色阴影、白高光。
+# ---------------------------------------------------------------- icons
+# Win95 icons use only a handful of colors: black outline, bright yellow face, olive shadow, white highlight.
 ICON_OUTLINE = "#000000"
 ICON_FACE = "#ffff00"
 ICON_SHADE = "#808000"
@@ -344,10 +349,12 @@ ICON_GRAY = "#c0c0c0"
 ICON_DKGRAY = "#808080"
 
 
-# 图标是逐像素定义的，不是画出来的。16×16 这么小的画布上，多边形的斜边
-# 只有两三像素，斜面根本读不出来，反而会糊成一坨黑；当年的美工也是一格一格
-# 点的。字符含义：k 黑描边 / w 白高光 / y 亮黄 / o 橄榄阴影 /
-#              g 灰 / d 深灰 / l 绿色指示灯 / . 透明
+# Icons are defined pixel by pixel, not drawn. On a canvas as small as 16x16,
+# a polygon's diagonal edge is only two or three pixels long, so a bevel is
+# unreadable and just smears into a black blob; the artists of that era also
+# placed them one cell at a time. Character meanings: k black outline /
+# w white highlight / y bright yellow / o olive shadow /
+#              g grey / d dark grey / l green indicator light / . transparent
 _ICON_COLORS = {
     "k": ICON_OUTLINE, "w": ICON_HILITE, "y": ICON_FACE, "o": ICON_SHADE,
     "g": ICON_GRAY, "d": ICON_DKGRAY, "l": "#00c000", "b": "#000080",
@@ -372,8 +379,10 @@ FOLDER_CLOSED = (
     "................",
 )
 
-# 打开：后片照旧立着，前片整体向左下错开一格一格地落下来，
-# 于是右上角探出、左下角伸出，那道斜面就是"打开"的全部视觉信息。
+# Open: the back sheet stays standing while the front sheet slides down one
+# cell at a time toward the bottom-left, so the top-right corner pokes out and
+# the bottom-left corner sticks out; that diagonal carries all the visual
+# information "open" needs.
 FOLDER_OPEN = (
     "................",
     "................",
@@ -450,7 +459,7 @@ NETWORK = (
     "................",
 )
 
-# 列表第一行那个"上级目录"图标：一个横躺的文件夹，比 .. 两个点好认
+# the "parent directory" icon in the first row of the list: a folder lying on its side, easier to recognize than two dots
 PARENT = (
     "................",
     "................",
@@ -478,7 +487,7 @@ DRIVE = (
     ".kkkkkkkkkkkkkk.",
     ".kwwwwwwwwwwwwk.",
     ".kgggggggggggdk.",
-    ".kgddddddggggdk.",     # 前面板的插槽，不然灰底上一片灰看着是空的
+    ".kgddddddggggdk.",     # the front-panel slot, otherwise a grey panel on a grey background looks empty
     ".kgggggggggggdk.",
     ".kglgggggggggdk.",
     ".kddddddddddddk.",
@@ -491,7 +500,8 @@ DRIVE = (
 
 
 def _from_grid(grid: tuple[str, ...], size: int = 16) -> QPixmap:
-    """按 1:1 点出 16×16，再整数倍最近邻放大 —— 缩放绝不能平滑，一糊就废。"""
+    """Dot out 16x16 at 1:1, then upscale by an integer factor with nearest-
+    neighbor. Scaling must never be smooth -- blurring would ruin it."""
     base = QPixmap(16, 16)
     base.fill(Qt.transparent)
     p = QPainter(base)
@@ -507,25 +517,26 @@ def _from_grid(grid: tuple[str, ...], size: int = 16) -> QPixmap:
 
 
 def folder_pixmap(size: int = 16, is_open: bool = False) -> QPixmap:
-    """Win95 的黄文件夹。"""
+    """Win95's yellow folder."""
     return _from_grid(FOLDER_OPEN if is_open else FOLDER_CLOSED, size)
 
 
 def drive_pixmap(size: int = 16) -> QPixmap:
-    """灰盒子加一颗绿灯，Win95 的硬盘图标。"""
+    """A grey box with a green light -- Win95's hard drive icon."""
     return _from_grid(DRIVE, size)
 
 
 def parent_pixmap(size: int = 16) -> QPixmap:
-    """列表第一行的"上级目录"图标。"""
+    """The "parent directory" icon in the first row of the list."""
     return _from_grid(PARENT, size)
 
 
 class Win95IconProvider(QFileIconProvider):
-    """把目录树的系统图标换成手画的 Win95 图标。
+    """Replaces the directory tree's system icons with hand-drawn Win95 icons.
 
-    QFileSystemModel 会拿这里的图标，所以只要换掉 provider，整棵树就变了。
-    图标按尺寸缓存 —— icon(QFileInfo) 每一行都会调一次。
+    QFileSystemModel picks up its icons from here, so swapping the provider
+    changes the whole tree. Icons are cached by size -- icon(QFileInfo) is
+    called once per row.
     """
 
     def __init__(self):
@@ -545,13 +556,13 @@ class Win95IconProvider(QFileIconProvider):
                      "parent": lambda: _from_grid(PARENT, size)}[kind]
             pm = maker()
             hit = QIcon(pm)
-            # 选中 / 禁用状态都用同一张，别让 Qt 自作主张把它变灰
+            # use the same pixmap for selected / disabled states; don't let Qt recolor it grey on its own
             hit.addPixmap(pm, QIcon.Selected)
             hit.addPixmap(pm, QIcon.Disabled)
             self._cache[key] = hit
         return hit
 
-    _BY_TYPE = None      # 延迟建表：IconType 是枚举，导入期建表会拖慢启动
+    _BY_TYPE = None      # lazy table: IconType is an enum, building the table at import time would slow startup
 
     def icon(self, arg):
         if Win95IconProvider._BY_TYPE is None:
@@ -563,10 +574,10 @@ class Win95IconProvider(QFileIconProvider):
         if isinstance(arg, QFileIconProvider.IconType):
             kind = Win95IconProvider._BY_TYPE.get(arg)
             return self._icon(kind) if kind else super().icon(arg)
-        # QFileInfo 重载 —— 树里绝大多数走这一支
+        # QFileInfo overload -- the vast majority of tree calls go through this branch
         if arg.isDir():
             name = arg.fileName().lower()
-            # Linux 上没有盘符，只能按挂载点名字猜个大概；猜不中就用文件夹
+            # Linux has no drive letters, so guess from the mount point name; fall back to a folder
             if name in ("floppy", "fd0", "fd1"):
                 return self._icon("floppy")
             if name in ("cdrom", "dvd", "sr0", "cdrom0"):
@@ -576,7 +587,8 @@ class Win95IconProvider(QFileIconProvider):
 
 
 def ui_font() -> QFont:
-    """MS Sans Serif 的替身。装了 Win 字体就用真的，没有就退到无衬线小字号。"""
+    """A stand-in for MS Sans Serif. Use the real thing if a Windows font is
+    installed, otherwise fall back to a small sans-serif."""
     from PySide6.QtGui import QFontDatabase
     families = set(QFontDatabase.families())
     for name in ("MS Sans Serif", "Microsoft Sans Serif", "Tahoma",
@@ -587,15 +599,17 @@ def ui_font() -> QFont:
     else:
         f = QFont()
         f.setPointSize(9)
-    # Win95 的界面字体是位图字体，一个像素都不糊。开着抗锯齿字就发虚，
-    # 整个界面立刻"现代"了 —— 这是最容易被忽略却最影响年代感的一处。
+    # Win95's UI font was a bitmap font, not a single blurred pixel. With
+    # antialiasing the text goes fuzzy and the whole UI instantly feels
+    # "modern" -- this is the easiest detail to overlook yet the one that most
+    # affects the period feel.
     f.setStyleStrategy(QFont.NoAntialias)
     f.setHintingPreference(QFont.PreferFullHinting)
     return f
 
 
 def apply(app: QApplication, on: bool) -> None:
-    """开关 Win95 外观。关掉就还原成 Qt 自己的默认样式。"""
+    """Toggle the Win95 look. Turning it off restores Qt's own default style."""
     if on:
         base = QStyleFactory.create("Fusion") or app.style()
         app.setStyle(Win95Style(base))

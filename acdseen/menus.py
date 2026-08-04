@@ -1,15 +1,17 @@
-"""浏览器的菜单：菜单栏、缩略图右键菜单、帮助与关于。
+"""The browser's menus: the menu bar, the thumbnail context menu, and help/about.
 
-_act() 里那件要紧事：浏览器的快捷键（Del / Enter / F5 / Ctrl+C…）和看图器
-的按键撞车，而且 WindowShortcut 上下文会抢在 Viewer.keyPressEvent 之前触发。
-所以凡是浏览态才有意义的 QAction 都登记进 _browse_actions，进入看图页时统一
-禁用 —— 这一层由 viewhost 负责开关。
+The critical thing in _act(): the browser's shortcuts (Del / Enter / F5 / Ctrl+C ...)
+collide with the viewer's key handling, and the WindowShortcut context fires before
+Viewer.keyPressEvent. So every QAction that only makes sense in browse mode is
+registered in _browse_actions and disabled uniformly when entering the viewer page
+-- that switch is handled by viewhost.
 
-切换界面语言时整个菜单要重建：self._menu_actions 收集所有 addAction 到窗口的
-action，供 _rebuild_menu 先 removeAction 再重建，免得旧 action 和快捷键残留。
+Switching the UI language rebuilds the whole menu: self._menu_actions collects every
+action added to the window, so _rebuild_menu can removeAction them first and then
+rebuild, preventing stale actions and shortcuts from lingering.
 
-依赖宿主提供：_view _view_mode _sort_key _sort_reverse _preview _model
-             以及各操作方法（_open_current / _rename / _delete / …）
+Expects the host to provide: _view _view_mode _sort_key _sort_reverse _preview _model
+                             and the action methods (_open_current / _rename / _delete / ...)
 """
 
 from __future__ import annotations
@@ -22,10 +24,10 @@ from .i18n import tr
 
 
 class MenuMixin:
-    # ------------------------------------------------------------- 菜单
+    # ------------------------------------------------------------- Menus
     def _build_menu(self) -> None:
         self._browse_actions: list[QAction] = []
-        self._menu_actions: list[QAction] = []   # 所有 addAction 到窗口的，重建时清掉
+        self._menu_actions: list[QAction] = []   # all actions added to the window, cleared on rebuild
         mb = self.menuBar()
 
         m_file = mb.addMenu(tr("menu.file"))
@@ -82,7 +84,7 @@ class MenuMixin:
         self._sort_acts: list[tuple[QAction, int]] = []
         for key, name in config.SORT_NAMES.items():
             if key == config.SORT_PIXELS:
-                m_sort.addSeparator()        # 以下几项要读文件头，和上面的分开
+                m_sort.addSeparator()        # the following entries need to read file headers, keep them apart from the ones above
             a = QAction(tr("sort.by", tr(name)), self, checkable=True)
             a.setChecked(key == self._sort_key)
             if key in config.SORT_NEEDS_DIMS:
@@ -97,7 +99,7 @@ class MenuMixin:
 
         m_show = mb.addMenu(tr("menu.show"))
         self._act(tr("action.view_selected"), "Return", self._open_current, m_show)
-        # 包一层 lambda：triggered 会塞个 checked 布尔进来，直接连会被当成起始张号
+        # Wrap in a lambda: triggered passes a checked bool in, and connecting directly would treat it as the start index
         self._act(tr("action.slideshow_first"), "Ctrl+S", lambda: self._start_slideshow(0), m_show)
 
         m_help = mb.addMenu(tr("menu.help"))
@@ -105,10 +107,11 @@ class MenuMixin:
         self._act(tr("action.about"), None, self._show_about, m_help, browse_only=False)
 
     def _build_language_menu(self, parent: QMenu) -> None:
-        """「界面语言」子菜单：每种语言一个单选 action。
+        """The "interface language" submenu: one radio action per language.
 
-        语言名用各自语言的自称，不翻译 —— 语言切换入口必须在自己能
-        看懂的语言里也认得出自己。
+        Language names use each language's own self-name, not a translation --
+        the language-switch entry point must be recognizable in a language the
+        user can already read.
         """
         m_lang = parent.addMenu(tr("menu.language"))
         grp = QActionGroup(self); grp.setExclusive(True)
@@ -124,12 +127,12 @@ class MenuMixin:
             a.setShortcut(shortcut if isinstance(shortcut, QKeySequence) else QKeySequence(shortcut))
         a.triggered.connect(slot)
         menu.addAction(a)
-        self.addAction(a)   # 让快捷键在整窗口生效
+        self.addAction(a)   # make the shortcut work across the whole window
         self._menu_actions.append(a)
         if browse_only:
-            # 这些快捷键（Del / Enter / F5 / Ctrl+C…）和看图器的按键撞车，
-            # 且 WindowShortcut 上下文会抢在 Viewer.keyPressEvent 之前触发。
-            # 进入看图模式时统一禁用。
+            # These shortcuts (Del / Enter / F5 / Ctrl+C ...) collide with the
+            # viewer's key handling, and the WindowShortcut context fires before
+            # Viewer.keyPressEvent. Disable them uniformly when entering viewer mode.
             self._browse_actions.append(a)
         return a
 
@@ -138,9 +141,10 @@ class MenuMixin:
         m.exec(self._view.viewport().mapToGlobal(pos))
 
     def _build_file_menu(self, pos) -> QMenu:
-        """构造缩略图右键菜单。和 exec 分开，测试才能不弹模态窗就检查内容。"""
-        # 作用于右键点中的那一项。Qt 右键也会移动当前项，两者通常一致，
-        # 但点在空白处时 indexAt 无效，那就退回当前项。
+        """Build the thumbnail context menu. Kept separate from exec so tests can inspect it without popping a modal window."""
+        # Operate on the item that was right-clicked. Qt's right-click also moves
+        # the current item, so the two usually agree, but indexAt is invalid when
+        # clicking empty space -- fall back to the current item.
         idx = self._view.indexAt(pos)
         if not idx.isValid():
             idx = self._view.currentIndex()
@@ -151,7 +155,7 @@ class MenuMixin:
             return m
 
         m.addAction(tr("ctx.view"), self._open_current)
-        # 用图片下标，不是视图行号 —— 有 ".." 行时两者差 1
+        # Use the image index, not the view row number -- they differ by 1 when a ".." row is present
         row = self._model.image_index(idx)
         act = m.addAction(tr("ctx.slideshow"), lambda: self._start_slideshow(max(0, row)))
         act.setEnabled(row >= 0)

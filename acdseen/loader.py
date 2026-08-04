@@ -1,14 +1,18 @@
-"""图像解码：缩略图线程池、全图两段式加载、预读。
+"""Image decoding: thumbnail thread pool, two-stage full-image loading, read-ahead.
 
-设计要点（还原 1996 年那种"永远不出现加载中"的手感）：
+Design notes (recreating the 1996 feel of "never seeing a loading indicator"):
 
-1. 两段式解码。先用 QImageReader.setScaledSize() 拿一张 PREVIEW_EDGE 边长的
-   预览——JPEG 走 DCT 缩放，比全解码快 4-8 倍——立刻上屏；同一张图的全尺寸
-   在后台线程继续解，解完无缝替换。用户感知到的打开时间是第一段的时间。
+1. Two-stage decoding. First use QImageReader.setScaledSize() to get a
+   PREVIEW_EDGE-sized preview -- JPEG uses DCT scaling, 4-8x faster than full
+   decoding -- and show it immediately; the same image's full size keeps
+   decoding in a background thread and seamlessly replaces the preview when
+   done. The open time the user perceives is the first stage's time.
 
-2. 预读。停在第 i 张时，后台把 i±READ_AHEAD 全部解好塞进 LRU。翻页时直接命中。
+2. Read-ahead. While parked on image i, the background decodes i±READ_AHEAD
+   images into the LRU. Flipping pages hits the cache directly.
 
-3. 缩略图走独立线程池 + 磁盘缓存，和看图器的线程互不抢占。
+3. Thumbnails use a separate thread pool + disk cache, so they never compete
+   with the viewer's threads.
 """
 
 from __future__ import annotations
@@ -24,11 +28,11 @@ from PySide6.QtGui import QImage, QImageReader
 
 from . import config
 
-# Pillow 是可选依赖，只为 PCX/PCD 这些 Qt 不认的老格式兜底
+# Pillow is an optional dependency, a fallback for old formats Qt doesn't recognize, like PCX/PCD
 try:
     from PIL import Image as PILImage
     HAVE_PIL = True
-except ImportError:  # pragma: no cover - 环境相关
+except ImportError:  # pragma: no cover - environment-dependent
     HAVE_PIL = False
 
 _pil_lock = threading.Lock()
@@ -36,11 +40,12 @@ _pil_ready = False
 
 
 def warmup() -> None:
-    """在主线程预热 Pillow 的插件注册表。
+    """Warm up Pillow's plugin registry on the main thread.
 
-    必须做：PILImage.open() 首次调用会 lazy-import 全部插件模块，多个
-    工作线程同时撞上这个 import 会炸（表现为 shiboken 的 seterror_argument
-    fatal error）。启动时在主线程一次性做掉。
+    This is required: the first PILImage.open() call lazy-imports all plugin
+    modules, and if several worker threads hit that import at the same time it
+    crashes (a shiboken seterror_argument fatal error). Do it once on the main
+    thread at startup.
     """
     global _pil_ready
     if not HAVE_PIL or _pil_ready:
@@ -54,10 +59,12 @@ def warmup() -> None:
             _pil_ready = True
 
 
-# PIL 解码整条串行。warmup() 只挡住了插件注册表的 lazy-import，挡不住
-# PILImage.open() 内部逐个插件试探的那一段 —— 损坏文件会把所有插件都试一遍，
-# 多个工作线程同时试探照样段错误（在 preview 面板不止一个时必现）。
-# 这是 Qt 认不出的格式才走的冷路径，串行的代价可以忽略。
+# PIL decoding is fully serialized. warmup() only guards the plugin registry's
+# lazy-import; it can't guard the part inside PILImage.open() that probes each
+# plugin in turn -- a corrupt file makes it try every plugin, and concurrent
+# probing from multiple worker threads still segfaults (it always happens when
+# more than one preview panel exists). This is the cold path taken only for
+# formats Qt doesn't recognize, so the serialization cost is negligible.
 _pil_decode_lock = threading.Lock()
 
 
@@ -77,8 +84,9 @@ def _read_with_pil_locked(path: Path, max_edge: int | None) -> QImage | None:
             if max_edge and max(im.size) > max_edge:
                 im.thumbnail((max_edge, max_edge), PILImage.Resampling.BILINEAR)
 
-            # 不走 PIL.ImageQt —— 它在工作线程里碰 Qt binding 会出问题。
-            # 直接把原始字节喂给 QImage，再 copy() 脱离这块 buffer。
+            # Don't use PIL.ImageQt -- it touches Qt bindings from worker
+            # threads, which causes problems. Feed the raw bytes straight to
+            # QImage, then copy() to detach from this buffer.
             w, h = im.size
             if has_alpha:
                 data = im.tobytes("raw", "RGBA")
@@ -86,15 +94,16 @@ def _read_with_pil_locked(path: Path, max_edge: int | None) -> QImage | None:
             else:
                 data = im.tobytes("raw", "RGB")
                 qimg = QImage(data, w, h, w * 3, QImage.Format_RGB888)
-            return qimg.copy()   # data 在此之后才可被回收
+            return qimg.copy()   # data can be reclaimed only after this
     except Exception:
         return None
 
 
 def load_image(path: Path, max_edge: int | None = None) -> QImage | None:
-    """解一张图。max_edge 非空时请求解码器直接吐缩小版（快得多）。"""
+    """Decode one image. When max_edge is set, ask the decoder to produce a
+    downscaled version directly (much faster)."""
     reader = QImageReader(str(path))
-    reader.setAutoTransform(True)  # 尊重 EXIF 方向
+    reader.setAutoTransform(True)  # respect EXIF orientation
     size = reader.size()
 
     if max_edge and size.isValid() and max(size.width(), size.height()) > max_edge:
@@ -109,16 +118,18 @@ def load_image(path: Path, max_edge: int | None = None) -> QImage | None:
 
 
 def image_dimensions(path: Path) -> tuple[int, int] | None:
-    """只读文件头拿尺寸，不解码像素。用于状态栏。"""
+    """Read just the file header for dimensions, without decoding pixels. Used
+    for the status bar."""
     size = QImageReader(str(path)).size()
     if size.isValid():
         return size.width(), size.height()
     return None
 
 
-# ------------------------------------------------------------------ 缩略图
+# ------------------------------------------------------------------ thumbnails
 class _ThumbCache:
-    """磁盘缩略图缓存。key = 路径 + mtime + 尺寸，文件变了自动失效。"""
+    """Disk thumbnail cache. key = path + mtime + size; if the file changes it
+    invalidates automatically."""
 
     def __init__(self, root: Path):
         self.root = root
@@ -126,7 +137,7 @@ class _ThumbCache:
     def _key(self, path: Path, mtime: float, edge: int) -> Path:
         raw = f"{path.resolve()}|{mtime:.0f}|{edge}".encode()
         h = hashlib.sha1(raw).hexdigest()
-        # 两级目录，避免单目录塞几万个文件
+        # two-level directory so a single directory doesn't hold tens of thousands of files
         return self.root / h[:2] / f"{h[2:]}.png"
 
     def get(self, path: Path, mtime: float, edge: int) -> QImage | None:
@@ -143,7 +154,7 @@ class _ThumbCache:
             f.parent.mkdir(parents=True, exist_ok=True)
             img.save(str(f), "PNG")
         except OSError:
-            pass  # 缓存写不进去不是致命错误
+            pass  # failing to write the cache is not fatal
 
     def clear(self) -> None:
         import shutil
@@ -165,7 +176,7 @@ class _ThumbTask(QRunnable):
 
     @Slot()
     def run(self) -> None:
-        # 目录已经换了，这个任务的结果没人要了，直接扔
+        # the directory has changed, so nobody wants this task's result; just drop it
         if self.generation != self._current_gen():
             return
         try:
@@ -189,7 +200,7 @@ class _ThumbTask(QRunnable):
 
 
 class ThumbnailLoader(QObject):
-    """缩略图线程池。ready 信号在主线程发出。"""
+    """Thumbnail thread pool. The ready signal is emitted on the main thread."""
 
     ready = Signal(object, object)   # (Path, QImage | None)
 
@@ -197,7 +208,7 @@ class ThumbnailLoader(QObject):
         super().__init__(parent)
         self._cache = _ThumbCache(config.CACHE_DIR)
         self._pool = QThreadPool(self)
-        # 留一个核给 UI 和看图器解码，别把机器榨干
+        # keep one core for the UI and viewer decoding; don't saturate the machine
         self._pool.setMaxThreadCount(max(2, QThreadPool.globalInstance().maxThreadCount() - 1))
         self._signals = _ThumbSignals()
         self._signals.done.connect(self.ready)
@@ -209,13 +220,14 @@ class ThumbnailLoader(QObject):
         return self._generation
 
     def invalidate(self) -> None:
-        """切目录时调用：让所有在飞的任务作废。"""
+        """Call when changing directories: invalidate all in-flight tasks."""
         self._generation += 1
         self._pending.clear()
         self._pool.clear()
 
     def set_paused(self, paused: bool) -> None:
-        """看图器打开时让路 —— 缩略图再重要也不该拖慢正在看的那张图。"""
+        """Yield while the viewer is open -- thumbnails, however important,
+        shouldn't slow down the image being viewed."""
         if paused == self._paused:
             return
         self._paused = paused
@@ -243,7 +255,7 @@ class ThumbnailLoader(QObject):
         self._pool.waitForDone(2000)
 
 
-# ------------------------------------------------------------------ 全图加载
+# ------------------------------------------------------------------ full-image loading
 class _FullSignals(QObject):
     preview = Signal(object, object, int)    # path, QImage, token
     full = Signal(object, object, int)
@@ -251,7 +263,8 @@ class _FullSignals(QObject):
 
 
 class _FullTask(QRunnable):
-    """一张图的两段式解码。preview_only=True 时用于预读的轻量档。"""
+    """Two-stage decoding for one image. With preview_only=True this is the
+    lightweight variant used for read-ahead."""
 
     def __init__(self, path: Path, token: int, signals: _FullSignals,
                  current_token, want_preview: bool = True):
@@ -269,7 +282,7 @@ class _FullTask(QRunnable):
         dims = image_dimensions(self.path)
         big = dims is None or max(dims) > config.PREVIEW_EDGE
 
-        # 第一段：小图，尽快上屏
+        # first stage: small image, get it on screen as fast as possible
         if self.want_preview and big:
             prev = load_image(self.path, max_edge=config.PREVIEW_EDGE)
             if self.token != self._current():
@@ -277,7 +290,7 @@ class _FullTask(QRunnable):
             if prev is not None and not prev.isNull():
                 self.signals.preview.emit(self.path, prev, self.token)
 
-        # 第二段：全尺寸
+        # second stage: full size
         full = load_image(self.path, max_edge=None)
         if self.token != self._current():
             return
@@ -288,7 +301,7 @@ class _FullTask(QRunnable):
 
 
 class ImageLoader(QObject):
-    """看图器用的加载器：两段式 + LRU + 预读。"""
+    """Loader used by the viewer: two-stage + LRU + read-ahead."""
 
     preview_ready = Signal(object, object)   # path, QImage
     full_ready = Signal(object, object)
@@ -307,7 +320,7 @@ class ImageLoader(QObject):
         self._lru: OrderedDict[Path, QImage] = OrderedDict()
         self._inflight: set[Path] = set()
 
-    # -- 缓存 --
+    # -- cache --
     def _cache_put(self, path: Path, img: QImage) -> None:
         self._lru[path] = img
         self._lru.move_to_end(path)
@@ -323,9 +336,10 @@ class ImageLoader(QObject):
     def drop(self, path: Path) -> None:
         self._lru.pop(path, None)
 
-    # -- 主入口 --
+    # -- main entry --
     def load(self, path: Path) -> QImage | None:
-        """请求显示某张图。命中缓存时同步返回 QImage（零延迟翻页）。"""
+        """Request that an image be shown. Returns the QImage synchronously on a
+        cache hit (zero-latency page turns)."""
         self._token += 1
         self._current = path
 
@@ -338,16 +352,16 @@ class ImageLoader(QObject):
         return None
 
     def read_ahead(self, paths: list[Path]) -> None:
-        """把邻居悄悄解好。已缓存或在飞的跳过。"""
+        """Silently decode the neighbours. Skip ones already cached or in flight."""
         for p in paths:
             if p in self._lru or p in self._inflight:
                 continue
             self._inflight.add(p)
-            # 预读任务不发 preview，也不受 token 作废影响（用固定 token）
+            # read-ahead tasks don't emit preview and aren't affected by token invalidation (fixed token)
             task = _FullTask(p, -1, self._sig, lambda: -1, want_preview=False)
             self._pool.start(task)
 
-    # -- 回调 --
+    # -- callbacks --
     def _on_preview(self, path: Path, img: QImage, token: int) -> None:
         if token == self._token and path == self._current:
             self.preview_ready.emit(path, img)

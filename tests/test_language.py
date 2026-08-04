@@ -1,4 +1,4 @@
-"""界面语言的翻译机制与切换。"""
+"""UI language translation mechanism and switching."""
 
 import pytest
 
@@ -23,7 +23,7 @@ def test_tr_英文查表(qapp):
 
 
 def test_tr_各语言都能查到(qapp):
-    """日语 / 西班牙语 / 法语同样走 id 查表。"""
+    """Japanese / Spanish / French also go through the same id lookup."""
     for code, expected in [("ja", "開く"), ("es", "Abrir"), ("fr", "Ouvrir")]:
         i18n.set_language(code)
         assert i18n.tr("action.open") == expected
@@ -32,13 +32,13 @@ def test_tr_各语言都能查到(qapp):
 
 def test_tr_查不到就回退(qapp):
     i18n.set_language(i18n.LANG_JA)
-    # 英文表里也没有的 id → 回退到 id 本身，绝不炸
+    # An id missing even from the English table falls back to the id itself, never crashes
     assert i18n.tr("no.such.id") == "no.such.id"
     i18n.set_language(i18n.LANG_ZH)
 
 
 def test_tr_日语重排占位符(qapp):
-    """status.transferred 在日语里词序不同，靠命名占位符重排。"""
+    """status.transferred has a different word order in Japanese, rearranged via named placeholders."""
     i18n.set_language(i18n.LANG_JA)
     assert i18n.tr("status.transferred",
                    verb="移動", count=3, dest="/tmp") == "3 個のファイルを /tmp に移動しました"
@@ -67,7 +67,7 @@ def browser(qapp, workdir):
 
 
 def test_切换语言立即刷新(qapp, browser):
-    """菜单和状态栏切完立刻换语言，不用重启。"""
+    """Menu and status bar switch language immediately, no restart needed."""
     assert i18n.current() == i18n.LANG_ZH
     browser._set_language(i18n.LANG_EN)
     texts = {a.text() for a in browser.actions()}

@@ -1,12 +1,15 @@
-"""全屏看图器 —— ACDSee Image Viewer 的复刻。
+"""A fullscreen image viewer -- a clone of the ACDSee Image Viewer.
 
-原版的灵魂：打开即见图，翻页无延迟，手不离键盘，屏幕上除了图什么都没有。
-所以这里没有工具栏、没有侧边栏，信息全部走可开关的 OSD 叠层。
+The soul of the original: open and you see the image, paging has no delay, hands never
+leave the keyboard, and the screen shows nothing but the image.
+So there is no toolbar and no sidebar here; all information goes through a toggleable
+OSD overlay.
 
-这个文件只留视图主体：导航、加载回调、缩放、键鼠事件、删除。
-其余按功能分了出去：
-  slideshow.py  幻灯片间隔与乱序播放
-  render.py     paintEvent 与 OSD 叠层
+This file keeps only the view body: navigation, load callbacks, zoom, keyboard/mouse
+events, delete.
+The rest is split out by feature:
+  slideshow.py  slideshow interval and shuffled playback
+  render.py     paintEvent and the OSD overlay
 """
 
 from __future__ import annotations
@@ -23,8 +26,10 @@ from .loader import ImageLoader
 from .render import RenderMixin
 from .slideshow import SlideshowMixin
 
-# FIT_WINDOW 是原版行为：小图不放大，一张 200px 的图在全屏下还是 200px。
-# FIT_FILL 是"真的铺满"：小图也放大到贴住显示框的短边。
+# FIT_WINDOW is the original behavior: small images are not enlarged; a 200px image
+# stays 200px in fullscreen.
+# FIT_FILL is "really fill": small images are also scaled up to hug the short edge of
+# the display area.
 FIT_WINDOW, FIT_WIDTH, FIT_ONE_TO_ONE, FIT_FREE, FIT_FILL = range(5)
 
 FIT_NAMES = {
@@ -36,15 +41,16 @@ FIT_NAMES = {
 
 
 class Viewer(SlideshowMixin, RenderMixin, QWidget):
-    """看图视图。持有一份文件列表，自己负责在其中前后移动。
+    """The viewing view. Holds a file list and moves forward and back through it itself.
 
-    既能当独立窗口（`acdseen photo.jpg` 直接开图），也能嵌进浏览器的
-    QStackedWidget 当一页用。区别只在于谁来响应 exit_view：
-    独立时是退出程序，嵌入时是切回缩略图页。
+    Can be a standalone window (`acdseen photo.jpg` opens an image directly), or be
+    embedded as a page of the browser's QStackedWidget. The only difference is who
+    responds to exit_view: standalone means quit the program, embedded means switch
+    back to the thumbnail page.
     """
 
-    exit_view = Signal(object)       # 请求退出查看，带上当前路径
-    closed = Signal(object)          # 窗口真的被关掉了（仅独立模式）
+    exit_view = Signal(object)       # requests leaving the view, carrying the current path
+    closed = Signal(object)          # the window was really closed (standalone mode only)
     file_deleted = Signal(object)
 
     def __init__(self, files: list[Path], index: int, parent=None):
@@ -59,20 +65,21 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
 
         self._image: QImage | None = None
         self._pixmap: QPixmap | None = None
-        self._is_preview = False          # 当前显示的是不是第一段的低清图
+        self._is_preview = False          # whether what's shown is the first low-res image
         self._error: str | None = None
 
-        # 默认铺满显示框：单页看图和幻灯放映都该占满窗口，小图也放大。
-        # 想要原版那种"小图不放大"，按 * 切到 FIT_WINDOW。
+        # Default to filling the display area: single-page viewing and slideshow should
+        # both fill the window, with small images scaled up too.
+        # For the original "small images not enlarged" behavior, press * to switch to FIT_WINDOW.
         self._fit_mode = FIT_FILL
-        self._base_fit = FIT_FILL     # 手动缩放后翻页要回到的模式
-        self._prev_fit = FIT_FILL     # 中键从 1:1 切回来时要回到的模式
+        self._base_fit = FIT_FILL     # the mode to return to when paging after a manual zoom
+        self._prev_fit = FIT_FILL     # the mode to return to when middle-click switches back from 1:1
         self._scale = 1.0
-        self._offset = QPoint(0, 0)       # 图像相对视口中心的平移
+        self._offset = QPoint(0, 0)       # translation of the image relative to the viewport center
         self._drag_from: QPoint | None = None
         self._drag_offset = QPoint(0, 0)
 
-        # 缩放后的位图缓存，避免每帧重采样大图
+        # Cache of the scaled bitmap, to avoid resampling the big image every frame
         self._scaled: QPixmap | None = None
         self._scaled_for: tuple[float, int, int] | None = None
 
@@ -86,7 +93,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self._slideshow.timeout.connect(self._slideshow_tick)
         self._slideshow_delay: float = config.DEFAULT_SLIDESHOW_DELAY
         self._shuffle = False
-        self._original_files = list(files)   # 关掉乱序时按这个还原
+        self._original_files = list(files)   # restore to this when shuffle is turned off
 
         self._loader = ImageLoader(self)
         self._loader.preview_ready.connect(self._on_preview)
@@ -96,14 +103,14 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self.resize(1000, 720)
         self._goto(self._index, initial=True)
 
-    # ------------------------------------------------------------- 属性
+    # ------------------------------------------------------------- Properties
     @property
     def current(self) -> Path | None:
         if 0 <= self._index < len(self._files):
             return self._files[self._index]
         return None
 
-    # ------------------------------------------------------------- 导航
+    # ------------------------------------------------------------- Navigation
     def _goto(self, index: int, initial: bool = False) -> None:
         if not self._files:
             self.exit_view.emit(None)
@@ -116,11 +123,11 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
 
         img = self._loader.load(path)
         if img is not None:
-            # 缓存命中：这一帧就是全尺寸，翻页零延迟
+            # Cache hit: this frame is full resolution, paging with zero delay
             self._set_image(img, preview=False)
         else:
-            # 没命中：保留上一张画面，等 preview 信号回来再换。
-            # 关键——绝不清屏，绝不显示"加载中"。
+            # Miss: keep the previous frame and swap when the preview signal arrives.
+            # Key point -- never clear the screen, never show "loading".
             self._is_preview = True
 
         self._update_title()
@@ -139,7 +146,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self._loader.read_ahead(neighbours)
 
     def next_image(self) -> None:
-        # 乱序跑完一轮就重洗，否则第二轮还是同一个顺序，等于没乱
+        # Once a shuffled round is finished, reshuffle; otherwise the second round repeats the same order, which defeats shuffling
         if self._shuffle and self._index + 1 >= len(self._files):
             self._reshuffle()
             self._goto(0)
@@ -155,14 +162,14 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
     def last_image(self) -> None:
         self._goto(len(self._files) - 1)
 
-    # ------------------------------------------------------------- 加载回调
+    # ------------------------------------------------------------- Load callbacks
     def _on_preview(self, path: Path, img: QImage) -> None:
         if path == self.current:
             self._set_image(img, preview=True)
 
     def _on_full(self, path: Path, img: QImage) -> None:
         if path == self.current:
-            # 无缝替换：只有缩放模式是"适应"时才需要重算，1:1 下位置保持
+            # Seamless replacement: only "fit" zoom modes need recomputation; position is preserved at 1:1
             self._set_image(img, preview=False, keep_view=True)
 
     def _on_failed(self, path: Path) -> None:
@@ -178,7 +185,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self._is_preview = preview
         self._invalidate_scaled()
 
-        # 从预览换成全尺寸时，视图参数（缩放模式、平移）保持不变
+        # When swapping from preview to full resolution, keep the view parameters (zoom mode, pan)
         if not (keep_view and not was_preview):
             if not keep_view:
                 self._offset = QPoint(0, 0)
@@ -186,7 +193,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
                     self._fit_mode = self._base_fit
         self.update()
 
-    # ------------------------------------------------------------- 缩放
+    # ------------------------------------------------------------- Zoom
     def _fitted_scale(self) -> float:
         if not self._image:
             return 1.0
@@ -196,9 +203,9 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         vw, vh = self.width(), self.height()
         if self._fit_mode == FIT_WINDOW:
             s = min(vw / iw, vh / ih)
-            return min(s, 1.0)      # 小图不放大 —— 原版行为
+            return min(s, 1.0)      # small images are not enlarged -- original behavior
         if self._fit_mode == FIT_FILL:
-            # 该放大就放大：整张图贴住显示框，长宽比不变
+            # Scale up when it should be: the whole image hugs the display area, keeping aspect ratio
             return min(vw / iw, vh / ih)
         if self._fit_mode == FIT_WIDTH:
             return vw / iw
@@ -212,8 +219,9 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
     def _set_fit(self, mode: int) -> None:
         self._fit_mode = mode
         if mode != FIT_FREE:
-            # 记住这个模式：翻到下一张时回到它，而不是一律退回适应窗口。
-            # 幻灯放映时选了"缩放到显示框"，就该每张都铺满。
+            # Remember this mode: return to it when flipping to the next image, rather
+            # than always falling back to fit-window.
+            # If "fit to display" is chosen during a slideshow, every image should fill it.
             self._base_fit = mode
         self._offset = QPoint(0, 0)
         self._invalidate_scaled()
@@ -228,7 +236,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         else:
             nxt = next((s for s in reversed(steps) if s < cur * 0.999), steps[0])
 
-        # 以鼠标位置（或视口中心）为锚点缩放
+        # Zoom anchored at the mouse position (or viewport center)
         if anchor is not None and self._image:
             centre = QPoint(self.width() // 2, self.height() // 2)
             rel = anchor - centre - self._offset
@@ -244,7 +252,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self._scaled = None
         self._scaled_for = None
 
-    # ------------------------------------------------------------- 文件操作
+    # ------------------------------------------------------------- File operations
     def delete_current(self) -> None:
         path = self.current
         if path is None:
@@ -264,11 +272,11 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self.file_deleted.emit(path)
         del self._files[self._index]
         if not self._files:
-            self.exit_view.emit(None)   # 删光了，没什么可看的了
+            self.exit_view.emit(None)   # all deleted; nothing left to look at
             return
         self._goto(min(self._index, len(self._files) - 1))
 
-    # ------------------------------------------------------------- 输入
+    # ------------------------------------------------------------- Input
     def keyPressEvent(self, ev) -> None:
         k = ev.key()
         mods = ev.modifiers()
@@ -329,7 +337,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         self.update()
 
     def toggle_fullscreen(self) -> None:
-        # 作用于顶层窗口：嵌入浏览器时是主窗口，独立时就是自己
+        # Applies to the top-level window: the main window when embedded in the browser, itself when standalone
         win = self.window()
         win.showNormal() if win.isFullScreen() else win.showFullScreen()
         self._invalidate_scaled()
@@ -356,7 +364,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         if self._drag_from is not None:
             moved = ev.position().toPoint() - self._drag_from
             if self._fit_mode != FIT_FREE and moved.manhattanLength() > 3:
-                # 一拖就自动切到自由缩放，否则拖了没反应很困惑
+                # Dragging automatically switches to free zoom; otherwise dragging would do nothing, which is confusing
                 self._scale = self._effective_scale()
                 self._fit_mode = FIT_FREE
             self._offset = self._drag_offset + moved
@@ -368,10 +376,10 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
             self._drag_from = None
             self.setCursor(Qt.ArrowCursor)
             if moved <= 3:
-                self.next_image()   # 单击翻页
+                self.next_image()   # single click pages
         elif ev.button() == Qt.MiddleButton:
-            # 在"你选的适应模式"和 1:1 之间来回。不能直接读 _base_fit——
-            # 切到 1:1 时它自己也会变成 1:1，那样就再也切不回来了。
+            # Toggle between "your chosen fit mode" and 1:1. Can't just read _base_fit --
+            # it also becomes 1:1 when switching to 1:1, so you could never switch back.
             if self._fit_mode == FIT_ONE_TO_ONE:
                 self._set_fit(self._prev_fit)
             else:
@@ -404,7 +412,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         m.exec(ev.globalPos())
 
     def teardown(self) -> None:
-        """停掉定时器和解码线程。宿主在丢弃这个视图前必须调用。"""
+        """Stop the timers and the decode thread. The host must call this before discarding the view."""
         self._slideshow.stop()
         self._loader.shutdown()
 
