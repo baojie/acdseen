@@ -229,9 +229,9 @@ QSettings 都被重定向到临时目录，不会碰你的 `~/.cache` 和真实�
 
 | 测试 | 挡住的坑 |
 |---|---|
-| `test_多线程并发解码pcx不崩溃` | Pillow 插件 lazy-import 在多工作线程下撞崩 shiboken（进程级 fatal error） |
-| `test_缩略图确实生成且尺寸正确` | `QImage.scaled()` 传 int 而非 Qt 枚举，任务静默抛异常，缩略图全空 |
-| `test_pil兜底不经过ImageQt` | `PIL.ImageQt` 在工作线程碰 Qt binding 会炸，必须自己从原始字节构造 `QImage` |
+| `test_concurrent_pcx_decode_does_not_crash` | Pillow 插件 lazy-import 在多工作线程下撞崩 shiboken（进程级 fatal error） |
+| `test_thumbnail_is_generated_at_the_right_size` | `QImage.scaled()` 传 int 而非 Qt 枚举，任务静默抛异常，缩略图全空 |
+| `test_pil_fallback_avoids_imageqt` | `PIL.ImageQt` 在工作线程碰 Qt binding 会炸，必须自己从原始字节构造 `QImage` |
 
 版本变更见 [`CHANGELOG.zh-CN.md`](CHANGELOG.zh-CN.md)。
 

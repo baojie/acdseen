@@ -87,7 +87,7 @@ def _draw_qt(path, w, h) -> None:
     for i in range(0, w, max(1, w // 20)):
         p.drawLine(i, 0, w - i, h)
     p.end()
-    assert img.save(str(path)), f"无法写出 {path}"
+    assert img.save(str(path)), f"cannot write {path}"
 
 
 def _draw_pil(path, w, h) -> bool:

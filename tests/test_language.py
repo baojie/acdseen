@@ -7,13 +7,13 @@ from acdseen.browser import Browser
 from conftest import pump
 
 
-def test_tr_中文查表(qapp):
+def test_tr_looks_up_zh(qapp):
     i18n.set_language(i18n.LANG_ZH)
     assert i18n.tr("action.open") == "打开"
     assert i18n.tr("status.images", 5) == "5 张图片"
 
 
-def test_tr_英文查表(qapp):
+def test_tr_looks_up_en(qapp):
     i18n.set_language(i18n.LANG_EN)
     assert i18n.tr("action.open") == "Open"
     assert i18n.tr("status.images", 5) == "5 images"
@@ -22,7 +22,7 @@ def test_tr_英文查表(qapp):
     i18n.set_language(i18n.LANG_ZH)
 
 
-def test_tr_各语言都能查到(qapp):
+def test_tr_resolves_every_language(qapp):
     """Japanese / Spanish / French also go through the same id lookup."""
     for code, expected in [("ja", "開く"), ("es", "Abrir"), ("fr", "Ouvrir")]:
         i18n.set_language(code)
@@ -30,14 +30,14 @@ def test_tr_各语言都能查到(qapp):
     i18n.set_language(i18n.LANG_ZH)
 
 
-def test_tr_查不到就回退(qapp):
+def test_tr_falls_back_when_missing(qapp):
     i18n.set_language(i18n.LANG_JA)
     # An id missing even from the English table falls back to the id itself, never crashes
     assert i18n.tr("no.such.id") == "no.such.id"
     i18n.set_language(i18n.LANG_ZH)
 
 
-def test_tr_日语重排占位符(qapp):
+def test_tr_ja_reorders_placeholders(qapp):
     """status.transferred has a different word order in Japanese, rearranged via named placeholders."""
     i18n.set_language(i18n.LANG_JA)
     assert i18n.tr("status.transferred",
@@ -45,11 +45,11 @@ def test_tr_日语重排占位符(qapp):
     i18n.set_language(i18n.LANG_ZH)
 
 
-def test_系统默认语言是合法值():
+def test_system_default_is_a_valid_code():
     assert i18n.system_default() in i18n.LANG_NAMES
 
 
-def test_非法语言被忽略():
+def test_invalid_language_is_ignored():
     before = i18n.current()
     i18n.set_language("xx")
     assert i18n.current() == before
@@ -66,7 +66,7 @@ def browser(qapp, workdir):
     pump(qapp, 300)
 
 
-def test_切换语言立即刷新(qapp, browser):
+def test_switching_language_retranslates_immediately(qapp, browser):
     """Menu and status bar switch language immediately, no restart needed."""
     assert i18n.current() == i18n.LANG_ZH
     browser._set_language(i18n.LANG_EN)
@@ -82,6 +82,6 @@ def test_切换语言立即刷新(qapp, browser):
     assert "从第一张开始幻灯片" in texts
 
 
-def test_语言选择持久化(qapp, browser):
+def test_language_choice_persists(qapp, browser):
     browser._set_language(i18n.LANG_EN)
     assert browser._settings.value("language") == i18n.LANG_EN

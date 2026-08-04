@@ -20,37 +20,37 @@ from conftest import pump
 
 
 # ------------------------------------------------------------------ synchronous decoding
-def test_load_image_各格式都能解(pics):
+def test_load_image_handles_every_format(pics):
     for p in sorted(pics.glob("IMG_*")):
         img = load_image(p)
-        assert img is not None and not img.isNull(), f"{p.name} 解不出来"
+        assert img is not None and not img.isNull(), f"cannot decode {p.name}"
 
 
-def test_load_image_损坏文件返回None(pics):
+def test_load_image_returns_none_for_broken_file(pics):
     assert load_image(pics / "broken.jpg") is None
 
 
-def test_load_image_max_edge限制长边(pics):
+def test_load_image_max_edge_limits_long_side(pics):
     img = load_image(pics / "IMG_002.bmp", max_edge=512)
     assert max(img.width(), img.height()) <= 512
 
 
-def test_image_dimensions_不解码就拿到尺寸(pics):
+def test_image_dimensions_without_decoding(pics):
     assert image_dimensions(pics / "IMG_000.jpg") == (1920, 1080)
     assert image_dimensions(pics / "broken.jpg") is None
 
 
-@pytest.mark.skipif(not HAVE_PIL, reason="未安装 Pillow")
-def test_pil兜底能解pcx(pics):
+@pytest.mark.skipif(not HAVE_PIL, reason="Pillow not installed")
+def test_pil_fallback_decodes_pcx(pics):
     pcx = pics / "IMG_008.pcx"
     if not pcx.exists():
-        pytest.skip("夹具未生成 pcx")
+        pytest.skip("no pcx sample generated")
     img = load_image(pcx)
     assert img is not None and img.size().toTuple() == (1200, 900)
 
 
-@pytest.mark.skipif(not HAVE_PIL, reason="未安装 Pillow")
-def test_pil兜底不经过ImageQt():
+@pytest.mark.skipif(not HAVE_PIL, reason="Pillow not installed")
+def test_pil_fallback_avoids_imageqt():
     """Regression: PIL.ImageQt touching Qt bindings on a worker thread causes a process-level crash.
 
     The loader must construct the QImage from raw bytes itself and never
@@ -63,7 +63,7 @@ def test_pil兜底不经过ImageQt():
 
 
 # ------------------------------------------------------------------ two-stage
-def test_大图走两段式_先preview后full(qapp, pics):
+def test_large_image_is_two_stage_preview_then_full(qapp, pics):
     loader = ImageLoader()
     events = []
     loader.preview_ready.connect(lambda p, i: events.append(("preview", i.size())))
@@ -84,7 +84,7 @@ def test_大图走两段式_先preview后full(qapp, pics):
     loader.shutdown()
 
 
-def test_小图不发preview(qapp, pics):
+def test_small_image_emits_no_preview(qapp, pics):
     loader = ImageLoader()
     events = []
     loader.preview_ready.connect(lambda p, i: events.append("preview"))
@@ -96,7 +96,7 @@ def test_小图不发preview(qapp, pics):
     loader.shutdown()
 
 
-def test_缓存命中时同步返回(qapp, pics):
+def test_cache_hit_returns_synchronously(qapp, pics):
     loader = ImageLoader()
     p = pics / "IMG_001.png"
     loader.load(p)
@@ -106,7 +106,7 @@ def test_缓存命中时同步返回(qapp, pics):
     loader.shutdown()
 
 
-def test_预读把邻居装进LRU(qapp, pics):
+def test_prefetch_fills_lru_with_neighbors(qapp, pics):
     loader = ImageLoader()
     files = sorted(pics.glob("IMG_*"))[:4]
     loader.read_ahead(files)
@@ -116,7 +116,7 @@ def test_预读把邻居装进LRU(qapp, pics):
     loader.shutdown()
 
 
-def test_LRU不超上限(qapp, pics):
+def test_lru_respects_its_limit(qapp, pics):
     loader = ImageLoader()
     many = list(sorted(pics.glob("IMG_*"))) * 3
     loader.read_ahead(many)
@@ -125,7 +125,7 @@ def test_LRU不超上限(qapp, pics):
     loader.shutdown()
 
 
-def test_解码失败发出load_failed(qapp, pics):
+def test_decode_failure_emits_load_failed(qapp, pics):
     loader = ImageLoader()
     failed = []
     loader.load_failed.connect(lambda p: failed.append(p))
@@ -134,7 +134,7 @@ def test_解码失败发出load_failed(qapp, pics):
     loader.shutdown()
 
 
-def test_drop清掉缓存项(qapp, pics):
+def test_drop_evicts_cache_entry(qapp, pics):
     loader = ImageLoader()
     p = pics / "IMG_001.png"
     loader.load(p)
@@ -145,7 +145,7 @@ def test_drop清掉缓存项(qapp, pics):
 
 
 # ------------------------------------------------------------------ thumbnails
-def test_缩略图确实生成且尺寸正确(qapp, pics):
+def test_thumbnail_is_generated_at_the_right_size(qapp, pics):
     """Regression: QImage.scaled was once passed an int instead of a Qt enum, so the task silently threw."""
     loader = ThumbnailLoader()
     got = {}
@@ -158,19 +158,19 @@ def test_缩略图确实生成且尺寸正确(qapp, pics):
 
     for f in files:
         img = got[f]
-        assert img is not None and not img.isNull(), f"{f.name} 无缩略图"
+        assert img is not None and not img.isNull(), f"no thumbnail for {f.name}"
         assert max(img.width(), img.height()) == 128, "长边应正好等于请求边长"
     loader.shutdown()
 
 
-def test_多线程并发解码pcx不崩溃(qapp, pics):
+def test_concurrent_pcx_decode_does_not_crash(qapp, pics):
     """Regression: Pillow's plugin lazy-import crashed shiboken under multiple worker threads.
 
     This test's value is that "the process is still alive" -- when it crashes,
     it never even reaches the assertion.
     """
     if not (pics / "IMG_008.pcx").exists():
-        pytest.skip("无 pcx 样本")
+        pytest.skip("no pcx sample")
     loader = ThumbnailLoader()
     done = []
     loader.ready.connect(lambda p, i: done.append(p))
@@ -180,7 +180,7 @@ def test_多线程并发解码pcx不崩溃(qapp, pics):
     loader.shutdown()
 
 
-def test_缩略图写入磁盘缓存并被复用(qapp, pics):
+def test_thumbnail_is_written_to_disk_cache_and_reused(qapp, pics):
     loader = ThumbnailLoader()
     got = []
     loader.ready.connect(lambda p, i: got.append(i))
@@ -192,7 +192,7 @@ def test_缩略图写入磁盘缓存并被复用(qapp, pics):
     loader.shutdown()
 
 
-def test_缩略图缓存随mtime失效(qapp, workdir):
+def test_thumbnail_cache_is_invalidated_by_mtime(qapp, workdir):
     import os
     loader = ThumbnailLoader()
     got = []
@@ -211,7 +211,7 @@ def test_缩略图缓存随mtime失效(qapp, workdir):
     loader.shutdown()
 
 
-def test_损坏文件的缩略图返回None而非崩溃(qapp, pics):
+def test_broken_file_thumbnail_returns_none_not_crash(qapp, pics):
     loader = ThumbnailLoader()
     got = {}
     loader.ready.connect(lambda p, i: got.__setitem__(p, i))
@@ -221,7 +221,7 @@ def test_损坏文件的缩略图返回None而非崩溃(qapp, pics):
     loader.shutdown()
 
 
-def test_暂停时请求排队_恢复后执行(qapp, pics):
+def test_requests_queue_while_paused_and_run_on_resume(qapp, pics):
     loader = ThumbnailLoader()
     got = []
     loader.ready.connect(lambda p, i: got.append(p))
@@ -238,7 +238,7 @@ def test_暂停时请求排队_恢复后执行(qapp, pics):
     loader.shutdown()
 
 
-def test_invalidate作废在飞任务(qapp, pics):
+def test_invalidate_voids_in_flight_tasks(qapp, pics):
     loader = ThumbnailLoader()
     got = []
     loader.ready.connect(lambda p, i: got.append(p))

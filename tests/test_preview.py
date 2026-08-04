@@ -17,13 +17,13 @@ def pane(qapp):
     p.close()
 
 
-def test_显示选中图片(qapp, pics, pane):
+def test_shows_the_selected_image(qapp, pics, pane):
     pane.show_path(pics / "IMG_000.jpg")
     assert pump(qapp, 6000, lambda: pane._img is not None)
     assert not pane._error
 
 
-def test_信息行报原图尺寸而非预览尺寸(qapp, pics, pane):
+def test_info_line_reports_source_not_preview_dimensions(qapp, pics, pane):
     """Regression: the preview image is scaled to the pane, so its size would report a wrong number.
 
     A 4000x3000 image in a 300px pane used to show as 300x225, mismatching the status bar.
@@ -34,16 +34,16 @@ def test_信息行报原图尺寸而非预览尺寸(qapp, pics, pane):
 
     assert max(pane._img.width(), pane._img.height()) < 2400, "预览图应当是缩小的"
     line = pane._info_line()
-    assert "2400×1800" in line, f"信息行报了预览图的尺寸：{line}"
+    assert "2400×1800" in line, f"info line reported the preview size: {line}"
 
 
-def test_信息行在解码完成前就有尺寸(qapp, pics, pane):
+def test_info_line_has_dimensions_before_decode_finishes(qapp, pics, pane):
     """The size only reads the file header; no need to wait for pixels to decode."""
     pane.show_path(pics / "IMG_000.jpg")
     assert "1920×1080" in pane._info_line()
 
 
-def test_切换图片更新信息行(qapp, pics, pane):
+def test_changing_image_updates_the_info_line(qapp, pics, pane):
     pane.show_path(pics / "IMG_000.jpg")
     assert "IMG_000.jpg" in pane._info_line()
     pane.show_path(pics / "IMG_001.png")
@@ -51,14 +51,14 @@ def test_切换图片更新信息行(qapp, pics, pane):
     assert "800×600" in pane._info_line()
 
 
-def test_损坏文件标记错误不崩溃(qapp, pics, pane):
+def test_broken_file_marks_error_not_crash(qapp, pics, pane):
     pane.show_path(pics / "broken.jpg")
     assert pump(qapp, 6000, lambda: pane._error)
     assert pane._img is None
     pane.repaint()      # error state must be drawable too
 
 
-def test_clear清空(qapp, pics, pane):
+def test_clear_empties_the_pane(qapp, pics, pane):
     pane.show_path(pics / "IMG_000.jpg")
     pump(qapp, 4000, lambda: pane._img is not None)
     pane.clear()
@@ -67,7 +67,7 @@ def test_clear清空(qapp, pics, pane):
     pane.repaint()
 
 
-def test_重复设同一路径不重新解码(qapp, pics, pane):
+def test_setting_the_same_path_twice_does_not_redecode(qapp, pics, pane):
     p = pics / "IMG_000.jpg"
     pane.show_path(p)
     assert pump(qapp, 6000, lambda: pane._img is not None)
@@ -76,7 +76,7 @@ def test_重复设同一路径不重新解码(qapp, pics, pane):
     assert pane._generation == gen, "同一张图不该重新排解码任务"
 
 
-def test_暂停后恢复会重新加载(qapp, pics, pane):
+def test_resuming_after_a_pause_reloads(qapp, pics, pane):
     pane.show_path(pics / "IMG_000.jpg")
     assert pump(qapp, 6000, lambda: pane._img is not None)
 
@@ -87,7 +87,7 @@ def test_暂停后恢复会重新加载(qapp, pics, pane):
     assert pump(qapp, 6000, lambda: pane._img is not None), "恢复后没重新加载"
 
 
-def test_空路径显示提示不崩溃(qapp, pane):
+def test_empty_path_shows_a_hint_not_a_crash(qapp, pane):
     pane.show_path(None)
     assert pane._info_line() == ""
     pane.repaint()

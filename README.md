@@ -272,9 +272,9 @@ development. Deleting them re-digs the holes:
 
 | Test | The hole it covers |
 |---|---|
-| `test_多线程并发解码pcx不崩溃` (concurrent PCX decode doesn't crash) | Pillow's lazy plugin import crashed shiboken under multiple worker threads (process-level fatal error) |
-| `test_缩略图确实生成且尺寸正确` (thumbnails are generated at the right size) | `QImage.scaled()` was passed an int instead of a Qt enum; the task threw silently and every thumbnail came back empty |
-| `test_pil兜底不经过ImageQt` (the PIL fallback avoids ImageQt) | `PIL.ImageQt` blows up when it touches the Qt bindings from a worker thread; the `QImage` has to be built from raw bytes instead |
+| `test_concurrent_pcx_decode_does_not_crash` | Pillow's lazy plugin import crashed shiboken under multiple worker threads (process-level fatal error) |
+| `test_thumbnail_is_generated_at_the_right_size` | `QImage.scaled()` was passed an int instead of a Qt enum; the task threw silently and every thumbnail came back empty |
+| `test_pil_fallback_avoids_imageqt` | `PIL.ImageQt` blows up when it touches the Qt bindings from a worker thread; the `QImage` has to be built from raw bytes instead |
 
 Release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 

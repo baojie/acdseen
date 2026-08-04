@@ -40,18 +40,18 @@ def yes(monkeypatch):
                         staticmethod(lambda *a, **k: QMessageBox.Yes))
 
 
-def test_列出目录里的图(browser, workdir):
+def test_lists_images_in_directory(browser, workdir):
     assert browser._model.image_count() == len(list_images(workdir))
 
 
-def test_可见项拿到缩略图(qapp, browser):
+def test_visible_items_get_thumbnails(qapp, browser):
     """Only visible items are required -- invisible ones shouldn't be decoded for nothing."""
     assert pump(qapp, 15000, lambda: len(browser._model._thumbs) > 0)
     thumbs = [t for t in browser._model._thumbs.values() if t is not None]
     assert thumbs
 
 
-def test_损坏文件显示破图标而非崩溃(qapp, browser, workdir):
+def test_broken_file_shows_placeholder_not_crash(qapp, browser, workdir):
     broken = workdir / "broken.jpg"
     browser._model._requested.add(broken)
     browser._loader.request(broken, browser._model.thumb_size())
@@ -59,7 +59,7 @@ def test_损坏文件显示破图标而非崩溃(qapp, browser, workdir):
     assert browser._model._thumbs[broken] is not None   # broken icon, not None
 
 
-def test_切换排序改变顺序(browser):
+def test_changing_sort_changes_order(browser):
     by_name = [p.name for p in browser._model.paths()]
     browser._set_sort(config.SORT_SIZE)
     by_size = [p.name for p in browser._model.paths()]
@@ -67,14 +67,14 @@ def test_切换排序改变顺序(browser):
     assert by_name != by_size
 
 
-def test_倒序(browser):
+def test_reverse_order(browser):
     forward = [p.name for p in browser._model.paths()]
     browser._sort_rev_act.setChecked(True)
     browser._toggle_sort_order()
     assert [p.name for p in browser._model.paths()] == forward[::-1]
 
 
-def test_缩略图尺寸步进(browser):
+def test_thumbnail_size_steps(browser):
     start = browser._model.thumb_size()
     browser._step_thumb(+1)
     assert browser._model.thumb_size() > start
@@ -82,7 +82,7 @@ def test_缩略图尺寸步进(browser):
     assert browser._model.thumb_size() == start
 
 
-def test_缩略图尺寸不越界(browser):
+def test_thumbnail_size_stays_in_range(browser):
     for _ in range(20):
         browser._step_thumb(+1)
     assert browser._model.thumb_size() == config.THUMB_SIZES[-1]
@@ -91,7 +91,7 @@ def test_缩略图尺寸不越界(browser):
     assert browser._model.thumb_size() == config.THUMB_SIZES[0]
 
 
-def test_切目录树可见性(browser):
+def test_toggles_tree_visibility(browser):
     """F9 only toggles the directory tree; the preview pane stays put."""
     assert browser._left_splitter.sizes()[0] > 0
     browser._toggle_tree()
@@ -100,7 +100,7 @@ def test_切目录树可见性(browser):
     assert browser._left_splitter.sizes()[0] > 0
 
 
-def test_点软链接目录不跳到真实路径(qapp, tmp_path, pics):
+def test_clicking_symlinked_dir_does_not_jump_to_real_path(qapp, tmp_path, pics):
     """Regression: set_directory used resolve(), so clicking a symlinked directory
     jumped to the real path and the selected tree row hopped away from the clicked line."""
     import os
@@ -132,7 +132,7 @@ def test_点软链接目录不跳到真实路径(qapp, tmp_path, pics):
     pump(qapp, 300)
 
 
-def test_同步树选中不递归回调(qapp, browser, tmp_path):
+def test_syncing_tree_selection_does_not_recurse(qapp, browser, tmp_path):
     """setCurrentIndex inside set_directory must not re-trigger _on_tree_changed --
     currentChanged is wired to the selectionModel, so intercepting QTreeView signals can't stop it."""
     calls = []
@@ -142,11 +142,11 @@ def test_同步树选中不递归回调(qapp, browser, tmp_path):
     if idx.isValid():
         browser._tree.setCurrentIndex(idx)
         pump(qapp, 500)
-        assert len(calls) == 1, f"set_directory 被重入了：{calls}"
+        assert len(calls) == 1, f"set_directory re-entered: {calls}"
     browser.set_directory = orig
 
 
-def test_幻灯演示从指定的那张开始(qapp, browser):
+def test_slideshow_starts_at_given_image(qapp, browser):
     browser._start_slideshow(2)
     pump(qapp, 500)
     v = browser._viewer
@@ -157,7 +157,7 @@ def test_幻灯演示从指定的那张开始(qapp, browser):
     pump(qapp, 300)
 
 
-def test_幻灯演示起始张号越界会夹住(qapp, browser):
+def test_slideshow_start_index_is_clamped(qapp, browser):
     n = browser._model.image_count()
     browser._start_slideshow(n + 99)
     pump(qapp, 500)
@@ -166,7 +166,7 @@ def test_幻灯演示起始张号越界会夹住(qapp, browser):
     pump(qapp, 300)
 
 
-def test_菜单栏幻灯片仍从第一张开始(qapp, browser):
+def test_menu_slideshow_still_starts_at_first(qapp, browser):
     """triggered passes in a checked boolean; wiring it straight to _start_slideshow would treat it as an index."""
     act = next(a for a in browser.actions() if a.text() == "从第一张开始幻灯片")
     act.trigger()
@@ -176,7 +176,7 @@ def test_菜单栏幻灯片仍从第一张开始(qapp, browser):
     pump(qapp, 300)
 
 
-def test_右键菜单里有幻灯演示(qapp, browser):
+def test_context_menu_has_slideshow(qapp, browser):
     """Build the menu but don't exec -- exec is modal, and once it pops up in a test it never returns."""
     rect = browser._view.visualRect(image_index(browser, 0))
     m = browser._build_file_menu(rect.center())
@@ -187,7 +187,7 @@ def test_右键菜单里有幻灯演示(qapp, browser):
     m.deleteLater()
 
 
-def test_右键点空白处幻灯演示不可用(qapp, browser):
+def test_slideshow_disabled_on_empty_area(qapp, browser):
     from PySide6.QtCore import QPoint
     browser._view.clearSelection()
     browser._view.setCurrentIndex(browser._model.index(-1, 0))
@@ -197,7 +197,7 @@ def test_右键点空白处幻灯演示不可用(qapp, browser):
     m.deleteLater()
 
 
-def test_预览窗格可见性开关(browser):
+def test_toggles_preview_pane(browser):
     """Simulate a menu click: Qt toggles checked first, then emits triggered which calls _toggle_preview."""
     assert browser._preview.isVisible()
     browser._preview_act.setChecked(False)
@@ -209,7 +209,7 @@ def test_预览窗格可见性开关(browser):
 
 
 # ------------------------------------------------------------------ file operations
-def test_重命名(qapp, browser, workdir):
+def test_rename(qapp, browser, workdir):
     from PySide6.QtWidgets import QInputDialog
     target = browser._model.paths()[0]
     select_image(browser, 0)
@@ -226,7 +226,7 @@ def test_重命名(qapp, browser, workdir):
     assert (workdir / ("renamed" + target.suffix)).exists()
 
 
-def test_重命名到已存在的名字会拒绝(qapp, browser, workdir, monkeypatch):
+def test_rename_to_existing_name_is_rejected(qapp, browser, workdir, monkeypatch):
     from PySide6.QtWidgets import QInputDialog
     paths = browser._model.paths()
     first, second = paths[0], paths[1]
@@ -243,7 +243,7 @@ def test_重命名到已存在的名字会拒绝(qapp, browser, workdir, monkeyp
     assert first.exists() and second.exists()
 
 
-def test_删除选中(qapp, browser, yes):
+def test_delete_selected(qapp, browser, yes):
     target = browser._model.paths()[0]
     select_image(browser, 0)
     browser._delete()
@@ -252,7 +252,7 @@ def test_删除选中(qapp, browser, yes):
     assert target not in browser._model.paths()
 
 
-def test_删除多选(qapp, browser, yes):
+def test_delete_multiple(qapp, browser, yes):
     sm = browser._view.selectionModel()
     targets = browser._model.paths()[:3]
     for r in range(3):
@@ -263,7 +263,7 @@ def test_删除多选(qapp, browser, yes):
     assert not any(t.exists() for t in targets)
 
 
-def test_复制粘贴到别的目录(qapp, browser, tmp_path):
+def test_copy_paste_to_another_directory(qapp, browser, tmp_path):
     src = browser._model.paths()[0]
     select_image(browser, 0)
     browser._copy()
@@ -276,7 +276,7 @@ def test_复制粘贴到别的目录(qapp, browser, tmp_path):
     assert src.exists(), "复制不该动原文件"
 
 
-def test_剪切是移动(qapp, browser, tmp_path):
+def test_cut_is_move(qapp, browser, tmp_path):
     src = browser._model.paths()[0]
     dest = tmp_path / "moved"
     dest.mkdir()
@@ -285,7 +285,7 @@ def test_剪切是移动(qapp, browser, tmp_path):
     assert not src.exists()
 
 
-def test_同名冲突自动改名不覆盖(qapp, browser, tmp_path):
+def test_name_conflict_renames_instead_of_overwriting(qapp, browser, tmp_path):
     src = browser._model.paths()[0]
     dest = tmp_path / "clash"
     dest.mkdir()
@@ -296,7 +296,7 @@ def test_同名冲突自动改名不覆盖(qapp, browser, tmp_path):
     assert (dest / f"{src.stem} (2){src.suffix}").exists()
 
 
-def test_粘贴到当前目录不自我覆盖(qapp, browser, workdir):
+def test_paste_into_same_directory_does_not_self_overwrite(qapp, browser, workdir):
     src = browser._model.paths()[0]
     before = src.read_bytes()
     browser._clipboard = ("copy", [src])
@@ -306,7 +306,7 @@ def test_粘贴到当前目录不自我覆盖(qapp, browser, workdir):
 
 
 # ------------------------------------------------------------------ viewer mode
-def test_看图不开新窗口(qapp, browser):
+def test_viewing_opens_no_new_window(qapp, browser):
     """Core requirement: viewing is a page switch inside the same window, not a popup."""
     from PySide6.QtWidgets import QApplication
 
@@ -322,7 +322,7 @@ def test_看图不开新窗口(qapp, browser):
     assert not v.isWindow(), "看图页必须是子控件，不是独立窗口"
 
 
-def test_进出看图模式切换页面(qapp, browser):
+def test_entering_and_leaving_view_switches_pages(qapp, browser):
     assert not browser.is_viewing()
     v = browser._open_viewer(0)
     assert browser.is_viewing()
@@ -334,7 +334,7 @@ def test_进出看图模式切换页面(qapp, browser):
     assert browser._stack.currentWidget() is browser._splitter
 
 
-def test_看图时隐藏状态栏(qapp, browser):
+def test_status_bar_hidden_while_viewing(qapp, browser):
     assert browser._status.isVisible()
     browser._open_viewer(0)
     pump(qapp, 300)
@@ -344,7 +344,7 @@ def test_看图时隐藏状态栏(qapp, browser):
     assert browser._status.isVisible()
 
 
-def test_看图时禁用浏览器快捷键(qapp, browser):
+def test_browser_shortcuts_disabled_while_viewing(qapp, browser):
     """WindowShortcut actions like Del / Enter / F5 fire before Viewer.keyPressEvent."""
     assert all(a.isEnabled() for a in browser._browse_actions)
     browser._open_viewer(0)
@@ -354,7 +354,7 @@ def test_看图时禁用浏览器快捷键(qapp, browser):
     assert all(a.isEnabled() for a in browser._browse_actions)
 
 
-def test_看图时空格翻页不被抢走(qapp, browser):
+def test_space_paging_not_stolen_while_viewing(qapp, browser):
     from PySide6.QtGui import QKeyEvent
     from PySide6.QtWidgets import QApplication
 
@@ -365,7 +365,7 @@ def test_看图时空格翻页不被抢走(qapp, browser):
     assert v._index == 1, "空格被浏览器快捷键吃掉了"
 
 
-def test_全屏看图时收起菜单栏(qapp, browser):
+def test_menu_bar_hidden_in_fullscreen(qapp, browser):
     v = browser._open_viewer(0)
     pump(qapp, 500)
     v.toggle_fullscreen()
@@ -378,7 +378,7 @@ def test_全屏看图时收起菜单栏(qapp, browser):
     assert browser.menuBar().isVisible()
 
 
-def test_退出看图时一并退出全屏(qapp, browser):
+def test_leaving_view_also_leaves_fullscreen(qapp, browser):
     v = browser._open_viewer(0)
     pump(qapp, 500)
     v.toggle_fullscreen()
@@ -389,7 +389,7 @@ def test_退出看图时一并退出全屏(qapp, browser):
     assert browser.menuBar().isVisible()
 
 
-def test_打开看图器时暂停缩略图池(qapp, browser):
+def test_thumbnail_pool_paused_while_viewing(qapp, browser):
     assert not browser._loader._paused
     browser._open_viewer(0)
     assert browser._loader._paused, "看图时缩略图仍在抢 CPU"
@@ -398,7 +398,7 @@ def test_打开看图器时暂停缩略图池(qapp, browser):
     assert not browser._loader._paused, "退出看图后没恢复缩略图加载"
 
 
-def test_看图器删除文件同步到列表(qapp, browser, yes):
+def test_viewer_delete_syncs_to_list(qapp, browser, yes):
     v = browser._open_viewer(0)
     pump(qapp, 4000, lambda: v._image is not None)
     doomed = v.current
@@ -408,7 +408,7 @@ def test_看图器删除文件同步到列表(qapp, browser, yes):
     browser._on_exit_view(None)
 
 
-def test_退出看图后选中回到当前图(qapp, browser):
+def test_selection_returns_to_current_image_after_view(qapp, browser):
     v = browser._open_viewer(2)
     pump(qapp, 4000, lambda: v._image is not None)
     expected = v.current
@@ -417,7 +417,7 @@ def test_退出看图后选中回到当前图(qapp, browser):
     assert browser._model.path_at(browser._view.currentIndex()) == expected
 
 
-def test_重复打开看图器不泄漏页面(qapp, browser):
+def test_reopening_viewer_leaks_no_pages(qapp, browser):
     n = browser._stack.count()
     for i in range(3):
         browser._open_viewer(i)
@@ -427,7 +427,7 @@ def test_重复打开看图器不泄漏页面(qapp, browser):
     assert browser._stack.count() == n, "旧的看图页没被拆掉"
 
 
-def test_空目录不崩溃(qapp, tmp_path):
+def test_empty_directory_does_not_crash(qapp, tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     b = Browser(empty)
@@ -439,7 +439,7 @@ def test_空目录不崩溃(qapp, tmp_path):
 
 
 # ------------------------------------------------------------------ preview pane
-def test_选中项出现在预览窗格(qapp, browser):
+def test_selection_appears_in_preview_pane(qapp, browser):
     # Note: don't use paths()[0]; under natural sort broken.jpg comes before
     # IMG_xxx. That's the fixture's deliberately corrupt file, which never
     # decodes. Use an image that actually can be decoded.
@@ -450,7 +450,7 @@ def test_选中项出现在预览窗格(qapp, browser):
     assert not browser._preview._error
 
 
-def test_切换选中项时预览跟着换(qapp, browser):
+def test_preview_follows_selection(qapp, browser):
     first, second = browser._model.paths()[0], browser._model.paths()[1]
     select_image(browser, 1)
     assert browser._preview._path == second
@@ -459,13 +459,13 @@ def test_切换选中项时预览跟着换(qapp, browser):
     assert browser._preview._path == first
 
 
-def test_损坏文件预览标记错误而非崩溃(qapp, browser, workdir):
+def test_broken_file_preview_marks_error_not_crash(qapp, browser, workdir):
     browser._preview.show_path(workdir / "broken.jpg")
     assert pump(qapp, 6000, lambda: browser._preview._error)
     browser._preview.repaint()          # error state must be drawable too
 
 
-def test_空目录预览清空(qapp, tmp_path):
+def test_preview_cleared_on_empty_directory(qapp, tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     b = Browser(empty)
@@ -476,7 +476,7 @@ def test_空目录预览清空(qapp, tmp_path):
     b.close()
 
 
-def test_看图时预览暂停_退出后恢复(qapp, browser):
+def test_preview_pauses_while_viewing_and_resumes(qapp, browser):
     browser._open_viewer(0)
     pump(qapp, 500)
     pv = browser._preview
@@ -485,7 +485,7 @@ def test_看图时预览暂停_退出后恢复(qapp, browser):
     # Key regression: switching pages triggers resize; while paused, the debounce timer must not pull it back up
     assert not pv._resize_timer.isActive()
     assert pump(qapp, 2000, lambda: pv._pool.activeThreadCount() == 0), \
-        "看图时不该还有预览解码线程在跑"
+        "no preview decode thread should still be running while viewing"
 
     browser._on_exit_view(None)
     pump(qapp, 500)
@@ -495,7 +495,7 @@ def test_看图时预览暂停_退出后恢复(qapp, browser):
 
 
 # ------------------------------------------------------------------ view mode
-def test_默认是缩略图模式(browser):
+def test_thumbnail_mode_is_default(browser):
     from PySide6.QtWidgets import QListView
     from acdseen.thumbmodel import ThumbDelegate
     assert browser._view_mode == config.VIEW_THUMBS
@@ -504,7 +504,7 @@ def test_默认是缩略图模式(browser):
     assert isinstance(browser._view.itemDelegate(), ThumbDelegate)
 
 
-def test_切到列表模式(qapp, browser):
+def test_switch_to_list_mode(qapp, browser):
     from PySide6.QtWidgets import QTreeView
     browser._toggle_view_mode()
     pump(qapp, 500)
@@ -515,7 +515,7 @@ def test_切到列表模式(qapp, browser):
     browser._view.repaint()          # list mode must be drawable
 
 
-def test_切视图不丢选中项(qapp, browser):
+def test_switching_views_keeps_selection(qapp, browser):
     select_image(browser, 2)
     keep = browser._current_path()
     browser._toggle_view_mode()
@@ -526,7 +526,7 @@ def test_切视图不丢选中项(qapp, browser):
     assert browser._current_path() == keep
 
 
-def test_列表模式不覆盖缩略图边长(qapp, browser):
+def test_list_mode_does_not_overwrite_thumbnail_edge(qapp, browser):
     """Regression: list mode shrinks the model size to 40; that value must not be persisted as the user's chosen thumbnail size."""
     browser._thumb_edge = 160
     browser._set_view_mode(config.VIEW_THUMBS)
@@ -540,14 +540,14 @@ def test_列表模式不覆盖缩略图边长(qapp, browser):
     assert browser._model.thumb_size() == 160, "切回来要恢复用户选的边长"
 
 
-def test_列表模式下调缩略图大小会切回网格(qapp, browser):
+def test_resizing_thumbnails_in_list_mode_returns_to_grid(qapp, browser):
     browser._set_view_mode(config.VIEW_LIST)
     pump(qapp, 300)
     browser._step_thumb(+1)
     assert browser._view_mode == config.VIEW_THUMBS
 
 
-def test_列表各列都有内容(browser):
+def test_all_list_columns_have_content(browser):
     from PySide6.QtCore import Qt
     from acdseen.thumbmodel import (COL_DIMS, COL_MTIME, COL_NAME, COL_SIZE,
                                     COL_TYPE, COLUMNS)
@@ -562,7 +562,7 @@ def test_列表各列都有内容(browser):
     assert cell(COL_MTIME)
 
 
-def test_表头有标题(browser):
+def test_header_has_titles(browser):
     from PySide6.QtCore import Qt
     from acdseen.thumbmodel import COLUMNS
     titles = [browser._model.headerData(i, Qt.Horizontal)
@@ -573,7 +573,7 @@ def test_表头有标题(browser):
     assert hdr.sectionsClickable(), "表头必须能点"
 
 
-def test_视图模式持久化(qapp, workdir):
+def test_view_mode_persists(qapp, workdir):
     b = Browser(workdir)
     b.show(); pump(qapp, 1500)
     b._set_view_mode(config.VIEW_LIST)
@@ -586,11 +586,11 @@ def test_视图模式持久化(qapp, workdir):
 
 
 # ------------------------------------------------------------------ sorting
-def test_排序菜单覆盖全部排序键(browser):
+def test_sort_menu_covers_all_keys(browser):
     assert {k for _, k in browser._sort_acts} == set(config.SORT_NAMES)
 
 
-def test_切排序会重排列表(qapp, browser):
+def test_changing_sort_reorders_list(qapp, browser):
     browser._set_sort(config.SORT_SIZE)
     pump(qapp, 500)
     sizes = [p.stat().st_size for p in browser._model.paths()]
@@ -601,7 +601,7 @@ def test_切排序会重排列表(qapp, browser):
     assert names == [p.name for p in list_images(browser._dir, config.SORT_NAME)]
 
 
-def test_随机排序刷新时不重洗(qapp, browser):
+def test_random_sort_does_not_reshuffle_on_refresh(qapp, browser):
     """Deleting an image triggers refresh(); the whole grid must not be re-shuffled then."""
     browser._set_sort(config.SORT_RANDOM)
     pump(qapp, 500)
@@ -611,7 +611,7 @@ def test_随机排序刷新时不重洗(qapp, browser):
     assert browser._model.paths() == before, "seed 没稳住，refresh 把顺序洗掉了"
 
 
-def test_再点随机会重新洗牌(qapp, browser):
+def test_clicking_random_again_reshuffles(qapp, browser):
     browser._set_sort(config.SORT_RANDOM)
     pump(qapp, 300)
     first, seed = list(browser._model.paths()), browser._sort_seed
@@ -622,7 +622,7 @@ def test_再点随机会重新洗牌(qapp, browser):
 
 
 # ------------------------------------------------------------------ header sorting
-def test_点表头按该列排序(qapp, browser):
+def test_clicking_header_sorts_by_column(qapp, browser):
     from acdseen.thumbmodel import COL_SIZE
     browser._set_view_mode(config.VIEW_LIST)
     pump(qapp, 300)
@@ -633,7 +633,7 @@ def test_点表头按该列排序(qapp, browser):
     assert sizes == sorted(sizes)
 
 
-def test_再点同一列翻转正倒序(qapp, browser):
+def test_clicking_same_column_reverses(qapp, browser):
     from acdseen.thumbmodel import COL_SIZE
     browser._set_view_mode(config.VIEW_LIST)
     pump(qapp, 300)
@@ -647,7 +647,7 @@ def test_再点同一列翻转正倒序(qapp, browser):
     assert browser._model.paths() == list(reversed(up))
 
 
-def test_点别的列回到正序(qapp, browser):
+def test_clicking_other_column_returns_to_ascending(qapp, browser):
     from acdseen.thumbmodel import COL_NAME, COL_SIZE
     browser._set_view_mode(config.VIEW_LIST)
     pump(qapp, 300)
@@ -662,7 +662,7 @@ def test_点别的列回到正序(qapp, browser):
     assert browser._sort_rev_act.isChecked() is False, "菜单的「倒序」也要跟上"
 
 
-def test_表头箭头跟随菜单排序(qapp, browser):
+def test_header_arrow_follows_menu_sort(qapp, browser):
     from PySide6.QtCore import Qt
     from acdseen.thumbmodel import COL_SIZE
     hdr = browser._list_view.header()
@@ -677,7 +677,7 @@ def test_表头箭头跟随菜单排序(qapp, browser):
     assert hdr.sortIndicatorOrder() == Qt.DescendingOrder
 
 
-def test_随机排序时收起箭头(qapp, browser):
+def test_arrow_hidden_for_random_sort(qapp, browser):
     """Random doesn't correspond to any column; forcing one would mislead."""
     hdr = browser._list_view.header()
     browser._set_sort(config.SORT_RANDOM)
@@ -685,7 +685,7 @@ def test_随机排序时收起箭头(qapp, browser):
     assert not hdr.isSortIndicatorShown()
 
 
-def test_列表模式多选不重复计数(qapp, browser):
+def test_list_mode_multiselect_counts_once(qapp, browser):
     """A QTreeView row has 5 indexes; without dedup, one file gets counted 5 times."""
     browser._set_view_mode(config.VIEW_LIST)
     pump(qapp, 300)
@@ -698,7 +698,7 @@ def test_列表模式多选不重复计数(qapp, browser):
     assert f"已选 {n}" in browser._status_left.text()
 
 
-def test_两个视图共享选中项(qapp, browser):
+def test_both_views_share_selection(qapp, browser):
     select_image(browser, 2)
     keep = browser._current_path()
     assert browser._icon_view.selectionModel() is browser._list_view.selectionModel()
@@ -708,7 +708,7 @@ def test_两个视图共享选中项(qapp, browser):
 
 
 # ------------------------------------------------------------------ parent directory row
-def test_列表第一行是上级目录(browser):
+def test_first_row_is_parent_directory(browser):
     m = browser._model
     idx = m.index(0, 0)
     assert m.is_parent_row(idx)
@@ -717,7 +717,7 @@ def test_列表第一行是上级目录(browser):
     assert m.rowCount() == m.image_count() + 1
 
 
-def test_上级目录行不是图片(browser):
+def test_parent_row_is_not_an_image(browser):
     """It must not leak into the selection, preview, or file operations -- those all rely on path_at returning None."""
     m = browser._model
     idx = m.index(0, 0)
@@ -728,14 +728,14 @@ def test_上级目录行不是图片(browser):
     assert browser._selected_paths() == [], "\"..\" 不该被当成选中的文件"
 
 
-def test_双击上级目录行回上级(qapp, browser, workdir):
+def test_double_click_parent_row_goes_up(qapp, browser, workdir):
     parent = workdir.parent
     browser._open_index(browser._model.index(0, 0))
     pump(qapp, 800)
     assert browser._dir == parent
 
 
-def test_根目录没有上级目录行(qapp):
+def test_root_has_no_parent_row(qapp):
     from pathlib import Path
     b = Browser(Path("/"))
     b.show(); pump(qapp, 1200)
@@ -744,19 +744,19 @@ def test_根目录没有上级目录行(qapp):
     b.close(); pump(qapp, 300)
 
 
-def test_切目录后选中第一张图而不是上级行(qapp, browser):
+def test_after_directory_change_first_image_is_selected(qapp, browser):
     m = browser._model
     assert m.first_image_row() == 1
     assert not m.is_parent_row(browser._view.currentIndex())
     assert browser._current_path() == m.paths()[0]
 
 
-def test_状态栏不把上级行算成图片(browser):
+def test_status_bar_excludes_parent_row(browser):
     n = len(browser._model.paths())
     assert f"{n} 张图片" in browser._status_left.text()
 
 
-def test_上级目录行的右键菜单只有回上级(browser):
+def test_parent_row_context_menu_only_goes_up(browser):
     m = browser._build_file_menu(browser._view.visualRect(
         browser._model.index(0, 0)).center())
     acts = [a.text() for a in m.actions()]
@@ -765,11 +765,11 @@ def test_上级目录行的右键菜单只有回上级(browser):
 
 
 # ------------------------------------------------------------------ path bar
-def test_路径栏显示当前目录(browser, workdir):
+def test_path_bar_shows_current_directory(browser, workdir):
     assert browser._path_bar.currentText() == str(workdir)
 
 
-def test_路径栏下拉列出各级祖先(browser, workdir):
+def test_path_bar_lists_ancestors(browser, workdir):
     items = [browser._path_bar.itemText(i)
              for i in range(browser._path_bar.count())]
     assert items[0] == str(workdir)
@@ -777,7 +777,7 @@ def test_路径栏下拉列出各级祖先(browser, workdir):
     assert str(workdir.parent) in items
 
 
-def test_路径栏输入路径可切目录(qapp, browser, workdir):
+def test_path_bar_accepts_typed_path(qapp, browser, workdir):
     target = workdir.parent
     browser._path_bar.setEditText(str(target))
     browser._on_path_entered()
@@ -785,7 +785,7 @@ def test_路径栏输入路径可切目录(qapp, browser, workdir):
     assert browser._dir == target
 
 
-def test_路径栏切目录不会递归(qapp, browser, workdir):
+def test_path_bar_change_does_not_recurse(qapp, browser, workdir):
     """Regression: inserting items into the QComboBox triggers activated; without
     blocking the signal, set_directory recurses into set_directory."""
     calls = []
@@ -793,5 +793,5 @@ def test_路径栏切目录不会递归(qapp, browser, workdir):
     browser.set_directory = lambda d: (calls.append(d), orig(d))[1]
     browser._on_path_picked(1)          # pick the parent
     pump(qapp, 800)
-    assert len(calls) == 1, f"set_directory 被重入了：{calls}"
+    assert len(calls) == 1, f"set_directory re-entered: {calls}"
     browser.set_directory = orig

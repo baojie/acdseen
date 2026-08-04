@@ -70,10 +70,9 @@ deleted.
 
 - **Comments and docstrings are in English.** They explain *why* a trade-off was
   made, not what the line does. Match the surrounding density. Any non-English
-  text left in the source is data, not prose: the `lang_*.py` translation
-  tables, the language names in `i18n.LANG_NAMES`, and a few test function
-  names — those are identifiers cited by name in `README.md`, so renaming one
-  means updating the docs too.
+  text left in the source is data, never prose: the `lang_*.py` translation
+  tables, the language names in `i18n.LANG_NAMES`, and the expected UI strings
+  that `tests/test_language.py` asserts against.
 - **User-visible strings go through `tr(id)`** (`i18n.py`). Every string has its
   own id (`action.open`, `status.images`); no language is embedded in the code.
   Translations live in `lang_<code>.py` — currently zh / en / ja / es / fr.
