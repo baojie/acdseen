@@ -32,7 +32,7 @@ it that way, or a test run will overwrite the user's real configuration.
 `browser.py` and `viewer.py` are hosts; most of their behavior lives in mixins:
 
 - Browser: `viewpanes` (thumbnail grid + detail list), `menus`, `fileops`,
-  `viewhost` (browse ↔ view page switching), `helptext`, plus `thumbmodel`
+  `viewhost` (browse ↔ view page switching), plus `thumbmodel`
   (the shared multi-column model) and `preview` (the preview pane)
 - Viewer: `slideshow`, `render` (paintEvent and the OSD overlay)
 

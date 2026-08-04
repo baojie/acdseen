@@ -13,6 +13,15 @@
 
 #### 新增
 
+- **五种界面语言**（`i18n.py` + `lang_<code>.py`）：English、简体中文、日本語、
+  Español、Français，菜单「查看 → 界面语言」切换
+  - 每个用户可见字符串都有独立 id（`action.open`、`status.images`），代码里调
+    `tr(id)` —— 语言不再嵌在代码里，加一种语言就是加一个 `lang_` 模块，别的不动
+  - 查表回退链：当前语言 → 英文 → id 本身，所以 `lang_en.py` 是所有 id 的权威清单
+  - 切换即时生效不用重启：重建菜单栏，并刷新状态栏、窗口标题、预览提示和看图页
+    标题。选择用 `QSettings` 持久化，首次运行跟随系统 locale
+  - 菜单里的语言名用各自语言的自称，一律不翻译 —— 否则一种语言认不出自己
+  - `helptext.py` 随之删除：F1 的快捷键表和其他字符串一样进了翻译表
 - **MIT 许可证**（`LICENSE`）：没有许可证等于「保留所有权利」，别人不能合法 fork
 - **打包元数据**：`pyproject.toml` 补 `readme` / `license` / `license-files` /
   `[project.urls]`，`pip install .` 后可直接敲 `acdseen`

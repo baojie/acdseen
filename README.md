@@ -53,6 +53,9 @@ and the reason a "simple image viewer" is so hard to find today.
 - **Windows 95 look**: `#C0C0C0` grey, 2px chiseled borders, `#000080` navy
   selection bar, `+/-` box tree, yellow folder icons, non-antialiased bitmap
   font, square-arrow scrollbars. On by default, switchable under View
+- **Five interface languages**: English, 简体中文, 日本語, Español, Français —
+  switch under **View → Language**, applied immediately without a restart and
+  remembered between runs. On first run it follows your system locale
 - **Path bar + `..` row**: type a path in the top right to jump straight there;
   the first row of the list is the parent directory
 - **Sorting**: name / file size / type / date modified / total pixels / width /
@@ -138,6 +141,7 @@ can be cleared any time from **View → Clear thumbnail cache**.
 | `Ctrl+1` / `Ctrl+2` | Thumbnail mode / list mode |
 | `F9` | Show / hide the folder tree |
 | View → Preview pane | Show / hide the preview of the selected image |
+| View → Language | Switch the interface language (takes effect immediately) |
 | `Ctrl+S` | Full-screen slideshow from the first image |
 | Right-click → Slideshow | Full-screen slideshow from the image you clicked |
 
@@ -208,10 +212,16 @@ acdseen/
 ├── viewpanes.py   ├─ the thumbnail grid and detail list views, switching, header sorting
 ├── menus.py       ├─ menu bar, context menu, help and about
 ├── fileops.py     ├─ file operations: rename / delete / copy / cut / paste / copy to / move to
-├── viewhost.py    ├─ page switching between browsing and viewing
-├── helptext.py    └─ the F1 shortcut table
+├── viewhost.py    └─ page switching between browsing and viewing
 ├── theme.py       Windows 95 look: palette + stylesheet + hand-drawn tree branches and arrows
 ├── preview.py     preview pane: large preview of the selection, single-thread decode, debounced reload
+│
+├── i18n.py        UI language: tr(id) lookup, fallback chain, current-language state
+├── lang_en.py     ├─ English table — the authoritative list of string ids
+├── lang_zh.py     ├─ 简体中文
+├── lang_ja.py     ├─ 日本語
+├── lang_es.py     ├─ Español
+├── lang_fr.py     └─ Français
 │
 ├── viewer.py      full-screen viewer: navigation, load callbacks, zoom, key and mouse events
 ├── slideshow.py   ├─ slideshow interval and shuffle

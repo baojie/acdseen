@@ -13,6 +13,21 @@ Recorded by day, newest first.
 
 #### Added
 
+- **Five interface languages** (`i18n.py` + `lang_<code>.py`): English,
+  简体中文, 日本語, Español, Français, switchable under **View → Language**
+  - Every user-visible string has its own id (`action.open`, `status.images`)
+    and the code calls `tr(id)` — no language is embedded in the code, so
+    adding a language means adding one `lang_` module and nothing else
+  - Lookup falls back from the current language to English to the id itself,
+    which makes `lang_en.py` the authoritative list of ids
+  - Switching takes effect immediately, without a restart: the menu bar is
+    rebuilt, and the status bar, window title, preview hint and viewer title
+    are re-rendered. The choice persists via `QSettings`; the first run
+    follows the system locale
+  - Language names in the menu are written in their own language and never
+    translated — otherwise a language can't recognize itself
+  - `helptext.py` is gone: the F1 shortcut table is now part of the
+    translation tables like every other string
 - **MIT license** (`LICENSE`): without one, "all rights reserved" applies and
   nobody can legally fork the project
 - **Packaging metadata**: `pyproject.toml` gains `readme` / `license` /
