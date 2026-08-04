@@ -134,13 +134,13 @@ def test_folder_icon_is_yellow(qapp):
     yellow = sum(1 for y in range(16) for x in range(16)
                  if img.pixelColor(x, y).name() == theme.ICON_FACE)
     assert yellow > 60, f"only {yellow} yellow pixels; the icon is probably wrong"
-    assert img.pixelColor(0, 0).alpha() == 0, "四角必须透明"
+    assert img.pixelColor(0, 0).alpha() == 0, "the corners must be transparent"
 
 
 def test_open_and_closed_folders_differ(qapp):
     a = theme.folder_pixmap(16, False).toImage()
     b = theme.folder_pixmap(16, True).toImage()
-    assert a != b, "展开状态得看得出区别，否则这个图标白做了"
+    assert a != b, "open and closed must be visibly different, or the icon was pointless"
 
 
 def test_icons_stay_sharp_when_scaled(qapp):
@@ -188,4 +188,4 @@ def test_drives_get_different_icons_by_type(qapp):
     drive = prov.icon(QFileIconProvider.Drive).pixmap(16, 16).toImage()
     net = prov.icon(QFileIconProvider.Network).pixmap(16, 16).toImage()
     folder = prov.icon(QFileIconProvider.Folder).pixmap(16, 16).toImage()
-    assert drive != net != folder, "三类图标不该长一样"
+    assert drive != net != folder, "the three drive types must not look alike"

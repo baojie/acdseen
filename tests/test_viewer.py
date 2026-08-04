@@ -8,6 +8,7 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
 from acdseen import config
+from acdseen.i18n import tr
 from acdseen.util import list_images
 from acdseen.viewer import (FIT_FILL, FIT_FREE, FIT_ONE_TO_ONE, FIT_WIDTH, FIT_WINDOW,
                             Viewer)
@@ -55,7 +56,7 @@ def test_paging_wraps_around(qapp, viewer):
     for _ in range(n):
         press(viewer, Qt.Key_Space)
         pump(qapp, 400)
-    assert viewer._index == 0, "转一圈应回到起点"
+    assert viewer._index == 0, "a full loop should come back to the start"
 
 
 def test_home_and_end(qapp, viewer):
@@ -76,8 +77,8 @@ def test_paging_does_not_blank_the_screen(qapp, viewer):
     viewer._loader._lru.clear()
     viewer._goto(len(viewer._files) - 1)
 
-    assert viewer._image is before, "切图瞬间清了屏，会出现闪烁/白屏"
-    assert pump(qapp, 5000, lambda: viewer._image is not before), "新图始终没解出来"
+    assert viewer._image is before, "the screen was blanked between images, which shows up as a flicker"
+    assert pump(qapp, 5000, lambda: viewer._image is not before), "the new image never finished decoding"
 
 
 def test_prefetch_hit_swaps_synchronously(qapp, viewer):
@@ -87,7 +88,7 @@ def test_prefetch_hit_swaps_synchronously(qapp, viewer):
     before = viewer._image
     viewer._goto(1)
     assert viewer._image is not before
-    assert not viewer._is_preview, "缓存命中拿到的应当是全尺寸，不是预览"
+    assert not viewer._is_preview, "a cache hit must yield full resolution, not the preview"
 
 
 def test_small_images_fill_the_box_by_default(qapp, pics):
@@ -97,8 +98,8 @@ def test_small_images_fill_the_box_by_default(qapp, pics):
     v.resize(1600, 1200)
     v.show()
     pump(qapp, 4000, lambda: v._image is not None)
-    assert v._fit_mode == FIT_FILL, "默认就该是缩放到显示框"
-    assert v._effective_scale() > 1.0, "小图默认就要放大"
+    assert v._fit_mode == FIT_FILL, "scale-to-box is meant to be the default"
+    assert v._effective_scale() > 1.0, "small images must be enlarged by default"
     v.close()
 
 
@@ -155,7 +156,7 @@ def test_arrows_pan_when_zoomed_freely(qapp, viewer):
     viewer.zoom_by(+1)
     idx, off = viewer._index, viewer._offset.x()
     press(viewer, Qt.Key_Right)
-    assert viewer._index == idx, "放大状态下右键应平移，不该翻页"
+    assert viewer._index == idx, "while zoomed, arrows pan rather than page"
     assert viewer._offset.x() != off
 
 
@@ -190,7 +191,7 @@ def test_info_bar_toggle(qapp, viewer):
 
 def test_prefetch_fills_after_paging(qapp, viewer):
     pump(qapp, 6000, lambda: len(viewer._loader._lru) >= 2)
-    assert len(viewer._loader._lru) >= 2, "预读没生效，翻页会卡"
+    assert len(viewer._loader._lru) >= 2, "prefetch did not run, so paging will stall"
 
 
 def test_broken_file_marks_error_not_crash(qapp, pics):
@@ -239,7 +240,7 @@ def test_deleting_the_last_image_requests_exit(qapp, tmp_path, pics, monkeypatch
     pump(qapp, 500)
 
     assert not lone.exists()
-    assert exits == [None], "删光了必须请求退出，否则停在空白页"
+    assert exits == [None], "with nothing left it must request exit, or it sits on a blank page"
     v.close()
 
 
@@ -249,7 +250,7 @@ def test_esc_requests_exit_instead_of_closing_itself(qapp, viewer):
     viewer.exit_view.connect(lambda p: exits.append(p))
     press(viewer, Qt.Key_Escape)
     assert exits == [viewer.current]
-    assert viewer.isVisible(), "不该自作主张关掉自己"
+    assert viewer.isVisible(), "it must not close itself unasked"
 
 
 def test_esc_leaves_fullscreen_first(qapp, viewer):
@@ -259,7 +260,7 @@ def test_esc_leaves_fullscreen_first(qapp, viewer):
     viewer.exit_view.connect(lambda p: exits.append(p))
     press(viewer, Qt.Key_Escape)
     pump(qapp, 500)
-    assert not exits, "第一次 Esc 应该只退全屏"
+    assert not exits, "the first Esc should only leave full screen"
     assert not viewer.is_fullscreen()
 
 
@@ -282,7 +283,7 @@ def test_emits_closed_when_closed(qapp, pics):
     expected = v.current
     v.close()
     pump(qapp, 300)
-    assert seen == [expected], "浏览器靠这个信号同步选中项"
+    assert seen == [expected], "the browser relies on this signal to sync its selection"
 
 
 # ------------------------------------------------------------------ slideshow interval
@@ -297,7 +298,7 @@ def test_zero_seconds_does_not_pass_zero_to_the_timer(viewer):
     viewer.set_delay(0)
     assert viewer._slideshow_delay == 0
     assert viewer._interval_ms() == config.SLIDESHOW_ASAP_MS > 0
-    assert viewer.format_delay(0) == "尽快"
+    assert viewer.format_delay(0) == tr("slideshow.asap")
 
 
 def test_zero_second_slideshow_runs_without_skipping_frames(qapp, viewer):
@@ -305,12 +306,12 @@ def test_zero_second_slideshow_runs_without_skipping_frames(qapp, viewer):
     viewer.toggle_slideshow()
     assert viewer._slideshow.isActive()
     start = viewer.current
-    assert pump(qapp, 8000, lambda: viewer.current != start), "0 秒档应该真的往前翻"
+    assert pump(qapp, 8000, lambda: viewer.current != start), "the zero-second step must actually advance"
     # Guard: must not advance while the previous image hasn't decoded
     viewer._is_preview, viewer._image = True, None
     before = viewer._index
     viewer._slideshow_tick()
-    assert viewer._index == before, "没解完还翻，就是跳帧"
+    assert viewer._index == before, "advancing before the decode finishes is a skipped frame"
     viewer.toggle_slideshow()
 
 
@@ -324,9 +325,9 @@ def test_out_of_range_interval_is_clamped(viewer):
 def test_interval_steps_include_zero(viewer):
     viewer.set_delay(config.SLIDESHOW_DELAYS[1])
     viewer._cycle_delay(-1)
-    assert viewer._slideshow_delay == 0, "往下一档应该走到 0 秒"
+    assert viewer._slideshow_delay == 0, "stepping down should reach zero seconds"
     viewer._cycle_delay(-1)
-    assert viewer._slideshow_delay == 0, "已经在头上了，不该越界"
+    assert viewer._slideshow_delay == 0, "already at the bottom; it must not go past it"
 
 
 def test_an_arbitrary_value_snaps_to_the_nearest_step(viewer):
@@ -334,7 +335,7 @@ def test_an_arbitrary_value_snaps_to_the_nearest_step(viewer):
     viewer.set_delay(7)
     viewer._cycle_delay(+1)
     assert viewer._slideshow_delay in config.SLIDESHOW_DELAYS
-    assert viewer._slideshow_delay == 5, "7 最接近 5，先归位到 5"
+    assert viewer._slideshow_delay == 5, "7 is nearest to 5, so it snaps to 5 first"
 
 
 # ------------------------------------------------------------------ shuffle
@@ -342,8 +343,8 @@ def test_shuffle_keeps_the_current_image(viewer):
     cur = viewer.current
     viewer.set_shuffle(True)
     assert viewer._shuffle
-    assert viewer.current == cur, "切乱序不该把你正在看的图换掉"
-    assert set(viewer._files) == set(viewer._original_files), "一张都不能丢"
+    assert viewer.current == cur, "toggling shuffle must not replace the image you are looking at"
+    assert set(viewer._files) == set(viewer._original_files), "not a single image may go missing"
 
 
 def test_disabling_shuffle_restores_the_original_order(viewer):
@@ -357,7 +358,7 @@ def test_disabling_shuffle_restores_the_original_order(viewer):
 def test_shuffle_actually_shuffles(qapp, pics):
     """A single shuffle could theoretically return the same order; over many shuffles at least one differs."""
     files = [f for f in list_images(pics) if f.name != "broken.jpg"]
-    assert len(files) >= 5, "样本太少，这条测试没意义"
+    assert len(files) >= 5, "too few samples for this test to mean anything"
     changed = False
     for _ in range(20):
         v = Viewer(files, 0)
@@ -367,7 +368,7 @@ def test_shuffle_actually_shuffles(qapp, pics):
         v.teardown()
         if changed:
             break
-    assert changed, "洗了 20 次一次都没变，随机没生效"
+    assert changed, "20 shuffles with no change at all: the randomness is not working"
 
 
 def test_shuffle_reshuffles_after_a_full_pass(qapp, viewer):
@@ -376,8 +377,8 @@ def test_shuffle_reshuffles_after_a_full_pass(qapp, viewer):
     before = list(viewer._files)
     viewer.next_image()
     pump(qapp, 300)
-    assert viewer._index == 0, "应该回到新一轮的第一张"
-    assert set(viewer._files) == set(before), "重洗不能丢图"
+    assert viewer._index == 0, "it should land on the first image of the new pass"
+    assert set(viewer._files) == set(before), "reshuffling must not lose images"
 
 
 def test_deleting_while_shuffled_does_not_resurrect_a_file(qapp, workdir, monkeypatch):
@@ -394,7 +395,7 @@ def test_deleting_while_shuffled_does_not_resurrect_a_file(qapp, workdir, monkey
     v.delete_current()
     pump(qapp, 300)
     v.set_shuffle(False)                       # restore uses _original_files
-    assert doomed not in v._files, "删掉的图不能靠关乱序复活"
+    assert doomed not in v._files, "a deleted image must not come back when shuffle is turned off"
     assert len(v._files) == len(files) - 1
     v.close()
 
@@ -416,7 +417,7 @@ def test_fit_window_does_not_upscale_small_images(qapp, tmp_path):
     v.show()
     pump(qapp, 4000, lambda: v._image is not None)
     v._set_fit(FIT_WINDOW)
-    assert v._effective_scale() == 1.0, "原版行为：小图保持原尺寸"
+    assert v._effective_scale() == 1.0, "original behavior: small images keep their size"
     v.close()
 
 
@@ -427,10 +428,10 @@ def test_scale_to_box_upscales_small_images(qapp, tmp_path):
     pump(qapp, 4000, lambda: v._image is not None)
     v._set_fit(FIT_FILL)
     s = v._effective_scale()
-    assert s > 1.0, "小图必须放大"
+    assert s > 1.0, "small images must be enlarged"
     # Snug against the short edge: 120x90 in 1000x700 -> constrained by height
     assert s == pytest.approx(min(v.width() / 120, v.height() / 90))
-    assert int(120 * s) <= v.width() and int(90 * s) <= v.height(), "不能超出显示框"
+    assert int(120 * s) <= v.width() and int(90 * s) <= v.height(), "it must not exceed the display box"
     v.close()
 
 
@@ -441,8 +442,8 @@ def test_scale_to_box_keeps_the_aspect_ratio(qapp, tmp_path):
     pump(qapp, 4000, lambda: v._image is not None)
     v._set_fit(FIT_FILL)
     s = v._effective_scale()
-    assert s == pytest.approx(v.width() / 120), "该受宽度限制"
-    assert int(90 * s) < v.height(), "高度方向留白，不拉伸"
+    assert s == pytest.approx(v.width() / 120), "width should be the limiting dimension"
+    assert int(90 * s) < v.height(), "leave margins vertically rather than stretching"
     v.close()
 
 
@@ -452,7 +453,7 @@ def test_both_modes_agree_on_large_images(qapp, viewer):
     a = viewer._effective_scale()
     viewer._set_fit(FIT_FILL)
     assert viewer._effective_scale() == pytest.approx(a)
-    assert a < 1.0, "夹具图应该比窗口大，否则这条测试没意义"
+    assert a < 1.0, "the fixture image must be larger than the window, or this test means nothing"
 
 
 def test_zoom_mode_persists_across_images(qapp, viewer):
@@ -469,7 +470,7 @@ def test_paging_after_a_manual_zoom_returns_to_the_mode(qapp, viewer):
     assert viewer._fit_mode == FIT_FREE
     viewer.next_image()
     pump(qapp, 4000, lambda: viewer._image is not None)
-    assert viewer._fit_mode == FIT_FILL, "该回到缩放到显示框，而不是一律退回适应窗口"
+    assert viewer._fit_mode == FIT_FILL, "it should return to scale-to-box, not fall back to fit-window"
 
 
 def test_middle_click_toggles_between_fit_and_1to1(qapp, viewer):
@@ -486,6 +487,6 @@ def test_middle_click_toggles_between_fit_and_1to1(qapp, viewer):
     middle_click()
     assert viewer._fit_mode == FIT_ONE_TO_ONE
     middle_click()
-    assert viewer._fit_mode == FIT_WINDOW, "该回到你选的适应模式"
+    assert viewer._fit_mode == FIT_WINDOW, "it should return to the fit mode you chose"
     middle_click()
-    assert viewer._fit_mode == FIT_ONE_TO_ONE, "来回切必须一直有效"
+    assert viewer._fit_mode == FIT_ONE_TO_ONE, "toggling back and forth must keep working"

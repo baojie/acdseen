@@ -57,7 +57,7 @@ def test_pil_fallback_avoids_imageqt():
     reintroduce ImageQt.
     """
     import acdseen.loader as L
-    assert not hasattr(L, "ImageQt"), "不要再引入 PIL.ImageQt"
+    assert not hasattr(L, "ImageQt"), "PIL.ImageQt must never be imported again"
     src = Path(L.__file__).read_text()
     assert "from PIL.ImageQt" not in src and "import ImageQt" not in src
 
@@ -74,7 +74,7 @@ def test_large_image_is_two_stage_preview_then_full(qapp, pics):
     assert pump(qapp, 6000, lambda: any(k == "full" for k, _ in events))
 
     kinds = [k for k, _ in events]
-    assert kinds[0] == "preview", "第一帧必须是低清预览，否则失去快开的意义"
+    assert kinds[0] == "preview", "the first frame must be the low-res preview, or the fast open is pointless"
     assert "full" in kinds
 
     prev_size = next(s for k, s in events if k == "preview")
@@ -92,7 +92,7 @@ def test_small_image_emits_no_preview(qapp, pics):
 
     loader.load(pics / "IMG_003.gif")   # 320x240, below PREVIEW_EDGE
     assert pump(qapp, 4000, lambda: "full" in events)
-    assert "preview" not in events, "小图多解一遍是纯浪费"
+    assert "preview" not in events, "decoding a small image twice is pure waste"
     loader.shutdown()
 
 
@@ -159,7 +159,7 @@ def test_thumbnail_is_generated_at_the_right_size(qapp, pics):
     for f in files:
         img = got[f]
         assert img is not None and not img.isNull(), f"no thumbnail for {f.name}"
-        assert max(img.width(), img.height()) == 128, "长边应正好等于请求边长"
+        assert max(img.width(), img.height()) == 128, "the long edge should equal the requested edge exactly"
     loader.shutdown()
 
 
@@ -188,7 +188,7 @@ def test_thumbnail_is_written_to_disk_cache_and_reused(qapp, pics):
     assert pump(qapp, 8000, lambda: bool(got))
 
     cached = list(config.CACHE_DIR.rglob("*.png"))
-    assert cached, "缩略图没落盘"
+    assert cached, "the thumbnail was never written to disk"
     loader.shutdown()
 
 
@@ -207,7 +207,7 @@ def test_thumbnail_cache_is_invalidated_by_mtime(qapp, workdir):
     got.clear()
     loader.request(target, 96)
     assert pump(qapp, 8000, lambda: bool(got))
-    assert len(list(config.CACHE_DIR.rglob("*.png"))) > before, "mtime 变了却复用了旧缓存"
+    assert len(list(config.CACHE_DIR.rglob("*.png"))) > before, "mtime changed but the stale cache entry was reused"
     loader.shutdown()
 
 
@@ -230,7 +230,7 @@ def test_requests_queue_while_paused_and_run_on_resume(qapp, pics):
     for f in sorted(pics.glob("IMG_*"))[:3]:
         loader.request(f, 96)
     pump(qapp, 600)
-    assert not got, "暂停期间不该有任务跑完"
+    assert not got, "no task should finish while the pool is paused"
     assert len(loader._pending) == 3
 
     loader.set_paused(False)

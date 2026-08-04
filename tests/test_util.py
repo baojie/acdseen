@@ -96,12 +96,12 @@ def test_unreadable_dimensions_do_not_blow_up(pics):
 def test_random_sort_is_stable_for_the_same_seed(pics):
     a = list_images(pics, config.SORT_RANDOM, seed=7)
     b = list_images(pics, config.SORT_RANDOM, seed=7)
-    assert a == b, "同一个 seed 必须排出同一个顺序，否则删张图就把网格重洗了"
-    assert sorted(a) == sorted(list_images(pics, config.SORT_NAME)), "一张都不能丢"
+    assert a == b, "the same seed must yield the same order, or deleting one image reshuffles the grid"
+    assert sorted(a) == sorted(list_images(pics, config.SORT_NAME)), "not a single image may go missing"
 
 
 def test_random_sort_changes_with_a_new_seed(pics):
-    assert len(list_images(pics, config.SORT_NAME)) >= 5, "样本太少，这条测试没意义"
+    assert len(list_images(pics, config.SORT_NAME)) >= 5, "too few samples for this test to mean anything"
     base = list_images(pics, config.SORT_RANDOM, seed=0)
     assert any(list_images(pics, config.SORT_RANDOM, seed=s) != base for s in range(1, 20)), \
         "order never changed across 20 seeds"
@@ -115,4 +115,4 @@ def test_dimension_cache_is_invalidated_by_mtime(tmp_path, pics):
     assert image_size(p) == (800, 600)
     shutil.copy(pics / "IMG_000.jpg", p.with_suffix(".jpg"))
     shutil.copy(pics / "IMG_006.jpg", p)          # swapped to 2560x1440, mtime changed too
-    assert image_size(p) == (2560, 1440), "文件换了尺寸没跟着变，缓存 key 没带 mtime"
+    assert image_size(p) == (2560, 1440), "dimensions did not follow the changed file: the cache key is missing mtime"

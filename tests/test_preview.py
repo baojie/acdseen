@@ -32,7 +32,7 @@ def test_info_line_reports_source_not_preview_dimensions(qapp, pics, pane):
     pane.show_path(big)
     assert pump(qapp, 8000, lambda: pane._img is not None)
 
-    assert max(pane._img.width(), pane._img.height()) < 2400, "预览图应当是缩小的"
+    assert max(pane._img.width(), pane._img.height()) < 2400, "the preview should be a scaled-down image"
     line = pane._info_line()
     assert "2400×1800" in line, f"info line reported the preview size: {line}"
 
@@ -73,7 +73,7 @@ def test_setting_the_same_path_twice_does_not_redecode(qapp, pics, pane):
     assert pump(qapp, 6000, lambda: pane._img is not None)
     gen = pane._generation
     pane.show_path(p)
-    assert pane._generation == gen, "同一张图不该重新排解码任务"
+    assert pane._generation == gen, "the same image must not be queued for decoding again"
 
 
 def test_resuming_after_a_pause_reloads(qapp, pics, pane):
@@ -81,10 +81,10 @@ def test_resuming_after_a_pause_reloads(qapp, pics, pane):
     assert pump(qapp, 6000, lambda: pane._img is not None)
 
     pane.set_paused(True)
-    assert pane._img is None, "暂停应作废在飞任务并清掉当前图"
+    assert pane._img is None, "pausing must void in-flight tasks and clear the current image"
 
     pane.set_paused(False)
-    assert pump(qapp, 6000, lambda: pane._img is not None), "恢复后没重新加载"
+    assert pump(qapp, 6000, lambda: pane._img is not None), "nothing was reloaded after resuming"
 
 
 def test_empty_path_shows_a_hint_not_a_crash(qapp, pane):
