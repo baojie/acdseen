@@ -69,20 +69,20 @@ deleted.
 ## Conventions
 
 - **Comments and docstrings are in English.** They explain *why* a trade-off was
-  made, not what the line does. Match the surrounding density. The only Chinese
-  left in the source is data, not prose: `lang_zh.py` (and the other translation
-  tables), the language names in `i18n.LANG_NAMES`, and the Chinese test
-  function names — those are identifiers referenced from `README.md`, so renaming
-  one means updating the docs too.
+  made, not what the line does. Match the surrounding density. Any non-English
+  text left in the source is data, not prose: the `lang_*.py` translation
+  tables, the language names in `i18n.LANG_NAMES`, and a few test function
+  names — those are identifiers cited by name in `README.md`, so renaming one
+  means updating the docs too.
 - **User-visible strings go through `tr(id)`** (`i18n.py`). Every string has its
   own id (`action.open`, `status.images`); no language is embedded in the code.
   Translations live in `lang_<code>.py` — currently zh / en / ja / es / fr.
   Lookup falls back to English and then to the id itself, which makes
   `lang_en.py` the authoritative list of ids: add there first, then translate.
 - **Documentation is English-first**: `README.md`, `CHANGELOG.md` and
-  `ref/win95-gaps.md` are the defaults; `*.zh-CN.md` are the Chinese versions.
-  Update both, and keep each language's internal links pointing within its own
-  language.
+  `ref/win95-gaps.md` are the defaults; the `*.zh-CN.md` files are translations
+  of them. Update both, and keep each file's internal links pointing at files
+  in its own language.
 - **Commit messages are in English.** Explain why the change was made, not just
   what changed; wrap the body at roughly 78 columns.
 - Work directly on the current branch — no feature branches for new work.
