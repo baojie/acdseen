@@ -68,8 +68,12 @@ deleted.
 
 ## Conventions
 
-- **Code, comments and docstrings are in Chinese.** Source comments explain *why*
-  a trade-off was made, not what the line does. Match the surrounding density.
+- **Comments and docstrings are in English.** They explain *why* a trade-off was
+  made, not what the line does. Match the surrounding density. The only Chinese
+  left in the source is data, not prose: `lang_zh.py` (and the other translation
+  tables), the language names in `i18n.LANG_NAMES`, and the Chinese test
+  function names — those are identifiers referenced from `README.md`, so renaming
+  one means updating the docs too.
 - **User-visible strings go through `tr(id)`** (`i18n.py`). Every string has its
   own id (`action.open`, `status.images`); no language is embedded in the code.
   Translations live in `lang_<code>.py` — currently zh / en / ja / es / fr.
