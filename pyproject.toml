@@ -2,6 +2,9 @@
 name = "acdseen"
 version = "0.1.0"
 description = "1996 年 ACDSee 1.2x 的复刻：一个浏览器 + 一个看图器，快就完事了"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = ["PySide6>=6.6"]
 
@@ -9,11 +12,15 @@ dependencies = ["PySide6>=6.6"]
 # 只为 PCX / PCD / PSD 这些 Qt 不认的老格式兜底
 legacy = ["Pillow>=10"]
 
+[project.urls]
+Homepage = "https://github.com/baojie/acdseen"
+Changelog = "https://github.com/baojie/acdseen/blob/main/CHANGELOG.md"
+
 [project.scripts]
 acdseen = "acdseen.main:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]   # PEP 639 的 license = "MIT" 需要 77+
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
