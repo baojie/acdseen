@@ -18,6 +18,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
 
 from . import config
+from .i18n import tr
 from .loader import ImageLoader
 from .render import RenderMixin
 from .slideshow import SlideshowMixin
@@ -27,10 +28,10 @@ from .slideshow import SlideshowMixin
 FIT_WINDOW, FIT_WIDTH, FIT_ONE_TO_ONE, FIT_FREE, FIT_FILL = range(5)
 
 FIT_NAMES = {
-    FIT_WINDOW: "适应窗口",
-    FIT_WIDTH: "适应宽度",
-    FIT_ONE_TO_ONE: "实际大小 1:1",
-    FIT_FILL: "缩放到显示框",
+    FIT_WINDOW: "fit.window",
+    FIT_WIDTH: "fit.width",
+    FIT_ONE_TO_ONE: "fit.1to1",
+    FIT_FILL: "fit.fill",
 }
 
 
@@ -167,7 +168,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
     def _on_failed(self, path: Path) -> None:
         if path == self.current:
             self._image = self._pixmap = self._scaled = None
-            self._error = f"无法解码：{path.name}"
+            self._error = tr("err.decode", path.name)
             self.update()
 
     def _set_image(self, img: QImage, preview: bool, keep_view: bool = False) -> None:
@@ -216,7 +217,7 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
             self._base_fit = mode
         self._offset = QPoint(0, 0)
         self._invalidate_scaled()
-        self._flash(FIT_NAMES.get(mode, ""))
+        self._flash(tr(FIT_NAMES.get(mode, "")))
         self.update()
 
     def zoom_by(self, direction: int, anchor: QPoint | None = None) -> None:
@@ -249,14 +250,14 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
         if path is None:
             return
         if QMessageBox.question(
-            self, "删除", f"删除 {path.name}？",
+            self, tr("action.delete"), tr("msg.delete_confirm", path.name),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         ) != QMessageBox.Yes:
             return
         try:
             path.unlink()
         except OSError as e:
-            QMessageBox.warning(self, "删除失败", str(e))
+            QMessageBox.warning(self, tr("msg.delete_failed"), str(e))
             return
 
         self._loader.drop(path)
@@ -382,24 +383,24 @@ class Viewer(SlideshowMixin, RenderMixin, QWidget):
 
     def contextMenuEvent(self, ev) -> None:
         m = QMenu(self)
-        m.addAction("下一张\tSpace", self.next_image)
-        m.addAction("上一张\tBackspace", self.prev_image)
+        m.addAction(tr("viewer.next"), self.next_image)
+        m.addAction(tr("viewer.prev"), self.prev_image)
         m.addSeparator()
-        m.addAction("适应窗口\t*", lambda: self._set_fit(FIT_WINDOW))
-        m.addAction("缩放到显示框\tZ", lambda: self._set_fit(FIT_FILL))
-        m.addAction("适应宽度\tW", lambda: self._set_fit(FIT_WIDTH))
-        m.addAction("实际大小\t/", lambda: self._set_fit(FIT_ONE_TO_ONE))
-        m.addAction("全屏\tF", self.toggle_fullscreen)
+        m.addAction(tr("viewer.fit_window"), lambda: self._set_fit(FIT_WINDOW))
+        m.addAction(tr("viewer.fit_fill"), lambda: self._set_fit(FIT_FILL))
+        m.addAction(tr("viewer.fit_width"), lambda: self._set_fit(FIT_WIDTH))
+        m.addAction(tr("viewer.actual"), lambda: self._set_fit(FIT_ONE_TO_ONE))
+        m.addAction(tr("viewer.fullscreen"), self.toggle_fullscreen)
         m.addSeparator()
-        act = m.addAction("幻灯片\tS", self.toggle_slideshow)
+        act = m.addAction(tr("viewer.slideshow"), self.toggle_slideshow)
         act.setCheckable(True); act.setChecked(self._slideshow.isActive())
-        act = m.addAction("乱序\tR", self.toggle_shuffle)
+        act = m.addAction(tr("viewer.shuffle"), self.toggle_shuffle)
         act.setCheckable(True); act.setChecked(self._shuffle)
-        m.addAction(f"幻灯间隔…\tD（当前 {self.format_delay(self._slideshow_delay)}）",
+        m.addAction(tr("viewer.delay", self.format_delay(self._slideshow_delay)),
                     self.ask_delay)
         m.addSeparator()
-        m.addAction("删除\tDel", self.delete_current)
-        m.addAction("返回浏览\tEsc", lambda: self.exit_view.emit(self.current))
+        m.addAction(tr("viewer.delete"), self.delete_current)
+        m.addAction(tr("viewer.back"), lambda: self.exit_view.emit(self.current))
         m.exec(ev.globalPos())
 
     def teardown(self) -> None:

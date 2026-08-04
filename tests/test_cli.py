@@ -18,7 +18,8 @@ from acdseen.main import main
 @pytest.mark.parametrize("flag", ["-h", "--help"])
 def test_help不开GUI(flag, capsys):
     assert main(["acdseen", flag]) == 0
-    assert "用法" in capsys.readouterr().out
+    # 用法文案跟随界面语言，只断言两种语言都有的片段
+    assert "acdseen" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("flag", ["-V", "--version"])
@@ -32,4 +33,4 @@ def test_子进程里help能秒退():
     r = subprocess.run([sys.executable, "-m", "acdseen", "--help"],
                        capture_output=True, text=True, timeout=20)
     assert r.returncode == 0
-    assert "用法" in r.stdout
+    assert "acdseen" in r.stdout   # 子进程不继承测试的语言隔离，断言语言无关

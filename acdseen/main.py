@@ -14,31 +14,28 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QApplication
 
-from . import config
+from . import config, i18n
+
 from .loader import warmup
 from .util import is_image, list_images
 
 
-USAGE = """\
-用法: acdseen [目录 | 图片]
-
-  acdseen              打开上次的目录（没有就是当前目录）
-  acdseen ~/Pictures   打开指定目录的浏览器
-  acdseen photo.jpg    直接全屏看这张图，同目录其他图自动排进列表
-
-选项:
-  -h, --help       显示此帮助
-  -V, --version    显示版本
-"""
+def _init_language() -> None:
+    """定界面语言：读上次的选择，没有就跟随系统 locale。"""
+    s = QSettings(config.ORG_NAME, config.APP_NAME)
+    saved = s.value("language", type=str)
+    i18n.set_language(saved if saved in i18n.LANG_NAMES else i18n.system_default())
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
 
+    _init_language()
+
     # 在建 QApplication 之前处理，否则 --help 会开出一个窗口来
     for flag in argv[1:]:
         if flag in ("-h", "--help"):
-            print(USAGE, end="")
+            print(i18n.tr("usage"), end="")
             return 0
         if flag in ("-V", "--version"):
             from . import __version__

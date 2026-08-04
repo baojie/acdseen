@@ -15,6 +15,7 @@ import random
 from PySide6.QtWidgets import QInputDialog
 
 from . import config
+from .i18n import tr
 
 
 class SlideshowMixin:
@@ -22,8 +23,8 @@ class SlideshowMixin:
     @staticmethod
     def format_delay(delay: float) -> str:
         if delay <= 0:
-            return "尽快"
-        return f"{delay:g} 秒"
+            return tr("slideshow.asap")
+        return tr("slideshow.seconds", delay)
 
     def _interval_ms(self) -> int:
         """0 秒不能真给 QTimer 传 0 —— 那是空转烧 CPU。给个最小节拍，
@@ -35,11 +36,12 @@ class SlideshowMixin:
     def toggle_slideshow(self) -> None:
         if self._slideshow.isActive():
             self._slideshow.stop()
-            self._flash("幻灯片：停止")
+            self._flash(tr("slideshow.stopped"))
         else:
             self._slideshow.start(self._interval_ms())
-            order = "，乱序" if self._shuffle else ""
-            self._flash(f"幻灯片：{self.format_delay(self._slideshow_delay)}/张{order}")
+            order = tr("slideshow.shuffled") if self._shuffle else ""
+            self._flash(tr("slideshow.running",
+                           self.format_delay(self._slideshow_delay), order))
         self.update()
 
     def _slideshow_tick(self) -> None:
@@ -55,7 +57,7 @@ class SlideshowMixin:
                                     min(config.SLIDESHOW_DELAY_MAX, float(delay)))
         if self._slideshow.isActive():
             self._slideshow.start(self._interval_ms())
-        self._flash(f"幻灯片间隔：{self.format_delay(self._slideshow_delay)}")
+        self._flash(tr("slideshow.delay_set", self.format_delay(self._slideshow_delay)))
         self.update()
 
     def _cycle_delay(self, direction: int) -> None:
@@ -70,7 +72,7 @@ class SlideshowMixin:
     def ask_delay(self) -> None:
         """弹对话框设任意间隔。0 = 尽快。"""
         value, ok = QInputDialog.getDouble(
-            self, "幻灯片间隔", "每张停留秒数（0 = 尽快）：",
+            self, tr("slideshow.dialog_title"), tr("slideshow.dialog_prompt"),
             float(self._slideshow_delay),
             config.SLIDESHOW_DELAY_MIN, config.SLIDESHOW_DELAY_MAX, 1)
         if ok:
@@ -95,7 +97,7 @@ class SlideshowMixin:
             self._files = [p for p in self._original_files if p in alive]
         self._index = self._files.index(cur) if cur in self._files else 0
         self._queue_read_ahead()
-        self._flash("乱序：开" if on else "乱序：关")
+        self._flash(tr("shuffle.on") if on else tr("shuffle.off"))
         self.update()
 
     def toggle_shuffle(self) -> None:

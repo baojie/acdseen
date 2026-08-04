@@ -65,15 +65,16 @@ SLIDESHOW_ASAP_MS = 30
 # 数值会写进 QSettings，只能往后追加，不能重排 —— 否则老配置读出来是别的排序。
 (SORT_NAME, SORT_SIZE, SORT_TYPE, SORT_DATE,
  SORT_PIXELS, SORT_WIDTH, SORT_HEIGHT, SORT_RANDOM) = range(8)
+# 值不是显示文本，是 i18n 的 id —— 菜单里 tr(name) 再查表
 SORT_NAMES = {
-    SORT_NAME: "名称",
-    SORT_SIZE: "文件大小",
-    SORT_TYPE: "类型",
-    SORT_DATE: "修改日期",
-    SORT_PIXELS: "像素总数",
-    SORT_WIDTH: "宽度",
-    SORT_HEIGHT: "高度",
-    SORT_RANDOM: "随机",
+    SORT_NAME: "sort.name",
+    SORT_SIZE: "sort.size",
+    SORT_TYPE: "sort.type",
+    SORT_DATE: "sort.date",
+    SORT_PIXELS: "sort.pixels",
+    SORT_WIDTH: "sort.width",
+    SORT_HEIGHT: "sort.height",
+    SORT_RANDOM: "sort.random",
 }
 # 这几种要读每个文件的图片头才能排 —— 比 stat() 贵，菜单上标出来
 SORT_NEEDS_DIMS = {SORT_PIXELS, SORT_WIDTH, SORT_HEIGHT}
@@ -87,6 +88,7 @@ DEFAULT_WIN95_LOOK = True
 
 # ---------------------------------------------------------------- 浏览视图
 VIEW_THUMBS, VIEW_LIST = range(2)
-VIEW_NAMES = {VIEW_THUMBS: "缩略图", VIEW_LIST: "列表"}
+# 值同上：i18n 的 id
+VIEW_NAMES = {VIEW_THUMBS: "view.thumbnails", VIEW_LIST: "view.list"}
 # 列表模式每行左边那个小缩略图的边长
 LIST_THUMB_SIZE = 40

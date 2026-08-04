@@ -25,8 +25,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileSystemModel, QLabel,
                                QMainWindow, QSplitter, QStackedWidget,
                                QStatusBar, QTreeView)
 
-from . import config
+from . import config, i18n
 from .fileops import FileOpsMixin
+from .i18n import tr
 from .loader import ThumbnailLoader, image_dimensions
 from .menus import MenuMixin
 from .preview import PreviewPane
@@ -218,10 +219,54 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
             theme.apply(app, on)
         self._sync_icon_provider()
 
+    # ------------------------------------------------------------- 语言
+    def _set_language(self, code: str) -> None:
+        """切界面语言：设置状态 → 持久化 → 立即刷新所有界面文本。"""
+        if i18n.current() == code:
+            return
+        i18n.set_language(code)
+        self._settings.setValue("language", code)
+        self._retranslate()
+
+    def _retranslate(self) -> None:
+        """切换语言后立即刷新：菜单、状态栏、标题、预览提示。"""
+        self._rebuild_menu()
+        self._update_status()
+        self.setWindowTitle(f"{self._dir} — {config.APP_NAME}")
+        self._preview.update()              # 预览窗格里的提示文字是画出来的
+        if self._viewer:
+            self._viewer._update_title()    # 看图页开着时标题跟着换
+
+    def _rebuild_menu(self) -> None:
+        """换语言后重建菜单栏。
+
+        旧的窗口级 action 先 removeAction 摘掉，再清空菜单栏 —— 直接
+        menuBar().clear() 的话，注册在窗口上的快捷键和 action 会残留两份。
+        """
+        old_win95 = self._win95_act.isChecked()
+        old_preview = self._preview_act.isChecked()
+        mb = self.menuBar()
+        for a in self._menu_actions:
+            self.removeAction(a)
+        self._menu_actions.clear()
+        mb.clear()
+        self._build_menu()
+        self._win95_act.setChecked(old_win95)
+        self._preview_act.setChecked(old_preview)
+        self._resync_menu_state()
+
+    def _resync_menu_state(self) -> None:
+        """重建菜单后把当前状态（视图模式 / 排序 / 倒序）落回新 action 上。"""
+        for act, m in self._view_acts:
+            act.setChecked(m == self._view_mode)
+        self._sort_rev_act.setChecked(self._sort_reverse)
+        for act, k in self._sort_acts:
+            act.setChecked(k == self._sort_key)
+
     def _clear_cache(self) -> None:
         self._loader.clear_disk_cache()
         self.refresh()
-        self._status.showMessage("缩略图缓存已清空", 2500)
+        self._status.showMessage(tr("msg.cache_cleared"), 2500)
 
     def eventFilter(self, obj, ev) -> bool:
         """Enter 看图、Backspace 回上级。两个视图都装了这个过滤器。"""
@@ -256,9 +301,9 @@ class Browser(ViewPanesMixin, MenuMixin, ViewHostMixin, FileOpsMixin,
         # 并且要排掉 ".." 那一行 —— 它不是图片
         sel = len({i.row() for i in self._view.selectionModel().selectedIndexes()
                    if self._model.path_at(i) is not None})
-        left = f"{total} 张图片"
+        left = tr("status.images", total)
         if sel > 1:
-            left += f"，已选 {sel}"
+            left += tr("status.selected", sel)
         self._status_left.setText(left)
 
         path = self._current_path()

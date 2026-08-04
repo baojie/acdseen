@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import QItemSelectionModel, Qt
 from PySide6.QtWidgets import QMessageBox
 
-from acdseen import config
+from acdseen import config, i18n
 from acdseen.browser import Browser
 from acdseen.util import list_images
 from conftest import pump
@@ -566,7 +566,8 @@ def test_表头有标题(browser):
     from acdseen.thumbmodel import COLUMNS
     titles = [browser._model.headerData(i, Qt.Horizontal)
               for i in range(browser._model.columnCount())]
-    assert titles == [t for t, _k, _w in COLUMNS]
+    # COLUMNS 第一列是 i18n 的 id，标题是翻译后的文本
+    assert titles == [i18n.tr(t) for t, _k, _w in COLUMNS]
     hdr = browser._list_view.header()
     assert hdr.sectionsClickable(), "表头必须能点"
 

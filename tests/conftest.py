@@ -19,7 +19,7 @@ from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
-from acdseen import config
+from acdseen import config, i18n
 from acdseen.loader import warmup
 
 # 覆盖测试用的图片矩阵：格式 × 尺寸，尺寸要跨过 PREVIEW_EDGE 两侧
@@ -64,6 +64,9 @@ def _clean_settings(_isolate):
     表现为莫名其妙的顺序错乱。
     """
     QSettings(config.ORG_NAME, config.APP_NAME).clear()
+    # 语言状态是模块级变量，一样要隔离 —— 否则英文 locale 的 CI 会把
+    # 默认语言推成 en，那些断言中文文本的测试全挂。
+    i18n.set_language(i18n.LANG_ZH)
     yield
     QSettings(config.ORG_NAME, config.APP_NAME).clear()
 

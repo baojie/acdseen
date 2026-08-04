@@ -18,24 +18,26 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
 
+from .i18n import tr
+
 
 class FileOpsMixin:
     def _rename(self) -> None:
         path = self._current_path()
         if path is None:
             return
-        new, ok = QInputDialog.getText(self, "重命名", "新名称：",
+        new, ok = QInputDialog.getText(self, tr("rename.title"), tr("rename.prompt"),
                                        QLineEdit.Normal, path.name)
         if not ok or not new.strip() or new == path.name:
             return
         target = path.with_name(new.strip())
         if target.exists():
-            QMessageBox.warning(self, "重命名", f"{target.name} 已存在。")
+            QMessageBox.warning(self, tr("rename.title"), tr("err.exists", target.name))
             return
         try:
             path.rename(target)
         except OSError as e:
-            QMessageBox.warning(self, "重命名失败", str(e))
+            QMessageBox.warning(self, tr("err.rename_failed"), str(e))
             return
         self.refresh()
         row = self._model.index_of(target)
@@ -46,8 +48,9 @@ class FileOpsMixin:
         paths = self._selected_paths()
         if not paths:
             return
-        msg = f"删除 {paths[0].name}？" if len(paths) == 1 else f"删除选中的 {len(paths)} 个文件？"
-        if QMessageBox.question(self, "删除", msg,
+        msg = (tr("msg.delete_confirm", paths[0].name) if len(paths) == 1
+               else tr("delete.confirm_many", len(paths)))
+        if QMessageBox.question(self, tr("action.delete"), msg,
                                 QMessageBox.Yes | QMessageBox.No,
                                 QMessageBox.No) != QMessageBox.Yes:
             return
@@ -63,20 +66,20 @@ class FileOpsMixin:
             self._view.setCurrentIndex(
                 self._model.index(min(row, self._model.rowCount() - 1), 0))
         if failed:
-            QMessageBox.warning(self, "部分删除失败", "\n".join(failed[:10]))
+            QMessageBox.warning(self, tr("err.delete_partial"), "\n".join(failed[:10]))
         self._update_status()
 
     def _copy(self) -> None:
         paths = self._selected_paths()
         if paths:
             self._clipboard = ("copy", paths)
-            self._status.showMessage(f"已复制 {len(paths)} 个文件", 2000)
+            self._status.showMessage(tr("status.copied", len(paths)), 2000)
 
     def _cut(self) -> None:
         paths = self._selected_paths()
         if paths:
             self._clipboard = ("cut", paths)
-            self._status.showMessage(f"已剪切 {len(paths)} 个文件", 2000)
+            self._status.showMessage(tr("status.cut", len(paths)), 2000)
 
     def _paste(self) -> None:
         if not self._clipboard:
@@ -93,7 +96,8 @@ class FileOpsMixin:
         if not paths:
             return
         dest = QFileDialog.getExistingDirectory(
-            self, "复制到…" if mode == "copy" else "移动到…", str(self._dir))
+            self, tr("action.copy_to") if mode == "copy" else tr("action.move_to"),
+            str(self._dir))
         if not dest:
             return
         self._do_transfer(paths, Path(dest), move=(mode == "move"))
@@ -113,10 +117,11 @@ class FileOpsMixin:
             except OSError as e:
                 failed.append(f"{p.name}: {e}")
         if failed:
-            QMessageBox.warning(self, "部分操作失败", "\n".join(failed[:10]))
+            QMessageBox.warning(self, tr("err.transfer_partial"), "\n".join(failed[:10]))
         else:
-            verb = "移动" if move else "复制"
-            self._status.showMessage(f"已{verb} {len(paths)} 个文件到 {dest}", 3000)
+            verb = tr("verb.move") if move else tr("verb.copy")
+            self._status.showMessage(
+                tr("status.transferred", verb=verb, count=len(paths), dest=dest), 3000)
 
     @staticmethod
     def _unique_name(target: Path) -> Path:

@@ -15,6 +15,7 @@ from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from . import config
+from .i18n import tr
 from .util import format_size, human_dims
 
 
@@ -67,11 +68,11 @@ class RenderMixin:
                 pass
             info.append(f"{self._effective_scale() * 100:.0f}%")
             if self._is_preview and self._image is not None:
-                info.append("· 精修中")
+                info.append(tr("osd.refining"))
             if self._slideshow.isActive():
-                info.append(f"▶ {self.format_delay(self._slideshow_delay)}")
+                info.append(tr("osd.play", self.format_delay(self._slideshow_delay)))
             if self._shuffle:
-                info.append("⤨ 乱序")
+                info.append(tr("osd.shuffle"))
             lines.append("   ".join(info))
 
         if self._transient:

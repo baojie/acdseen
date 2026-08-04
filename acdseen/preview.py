@@ -20,6 +20,7 @@ from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QPainter,
                            QPalette)
 from PySide6.QtWidgets import QWidget
 
+from .i18n import tr
 from .loader import image_dimensions, load_image
 from .util import format_size, human_dims
 
@@ -161,13 +162,13 @@ class PreviewPane(QWidget):
         img_area = QRect(2, 2, self.width() - 4, self.height() - info_h - 2)
 
         if self._path is None:
-            self._paint_hint(p, "选择一张图片查看预览", img_area)
+            self._paint_hint(p, tr("preview.hint"), img_area)
         elif self._error:
-            self._paint_hint(p, f"无法解码：{self._path.name}", img_area)
+            self._paint_hint(p, tr("err.decode", self._path.name), img_area)
         elif self._img is not None:
             self._paint_image(p, self._img, img_area)
         else:
-            self._paint_hint(p, "解码中…", img_area)
+            self._paint_hint(p, tr("preview.decoding"), img_area)
 
         self._paint_info(p, self._info_line())
 

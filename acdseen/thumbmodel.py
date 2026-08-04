@@ -16,16 +16,18 @@ from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QListView, QStyle, QStyledItemDelegate
 
 from . import config
+from .i18n import tr
 from .loader import ThumbnailLoader
 from .util import format_mtime, format_size, human_dims, image_size
 
-# (标题, 点表头时用的排序键, 默认列宽)。列宽 None = 名称列，占掉剩下的空间。
+# (标题 id, 点表头时用的排序键, 默认列宽)。列宽 None = 名称列，占掉剩下的空间。
+# 标题是 i18n 的 id，headerData 里 tr() 再查表。
 COLUMNS = (
-    ("名称",     config.SORT_NAME,   None),
-    ("尺寸",     config.SORT_PIXELS, 110),
-    ("大小",     config.SORT_SIZE,    90),
-    ("类型",     config.SORT_TYPE,    70),
-    ("修改日期", config.SORT_DATE,   140),
+    ("col.name",  config.SORT_NAME,   None),
+    ("col.dims",  config.SORT_PIXELS, 110),
+    ("col.size",  config.SORT_SIZE,    90),
+    ("col.type",  config.SORT_TYPE,    70),
+    ("col.mtime", config.SORT_DATE,   140),
 )
 COL_NAME, COL_DIMS, COL_SIZE, COL_TYPE, COL_MTIME = range(len(COLUMNS))
 
@@ -128,7 +130,7 @@ class ThumbModel(QAbstractTableModel):
     def headerData(self, section: int, orientation, role=Qt.DisplayRole):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
             if 0 <= section < len(COLUMNS):
-                return COLUMNS[section][0]
+                return tr(COLUMNS[section][0])
         return None
 
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
@@ -138,7 +140,7 @@ class ThumbModel(QAbstractTableModel):
             if role == Qt.DecorationRole and index.column() == COL_NAME:
                 return self._parent_icon()
             if role == Qt.ToolTipRole:
-                return f"上级目录：{self._parent_dir}"
+                return tr("tip.parent", self._parent_dir)
             return None
 
         path = self.path_at(index)
