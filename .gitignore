@@ -1,3 +1,4 @@
+# Build artifacts, caches and the local virtualenv -- none of it belongs in the repo.
 .venv/
 __pycache__/
 *.pyc
