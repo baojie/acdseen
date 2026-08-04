@@ -70,8 +70,11 @@ deleted.
 
 - **Code, comments and docstrings are in Chinese.** Source comments explain *why*
   a trade-off was made, not what the line does. Match the surrounding density.
-- **User-visible strings go through `tr()`** (`i18n.py`), with the Chinese string
-  as the source key and the English translation in `lang_en.py`.
+- **User-visible strings go through `tr(id)`** (`i18n.py`). Every string has its
+  own id (`action.open`, `status.images`); no language is embedded in the code.
+  Translations live in `lang_<code>.py` — currently zh / en / ja / es / fr.
+  Lookup falls back to English and then to the id itself, which makes
+  `lang_en.py` the authoritative list of ids: add there first, then translate.
 - **Documentation is English-first**: `README.md`, `CHANGELOG.md` and
   `ref/win95-gaps.md` are the defaults; `*.zh-CN.md` are the Chinese versions.
   Update both, and keep each language's internal links pointing within its own
