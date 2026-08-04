@@ -1,4 +1,4 @@
-"""日本語翻訳表：id → 日本語。"""
+"""Japanese translation table: id → Japanese."""
 
 TRANSLATIONS = {
     # ------------------------------------------------------- config.py

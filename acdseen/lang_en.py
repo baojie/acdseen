@@ -1,7 +1,8 @@
-"""英文翻译表：id → English。
+"""English translation table: id → English.
 
-这是所有 id 的权威清单（i18n.tr 查不到当前语言时回退到这里），
-所以每个 id 都必须出现在本表。按来源文件分组，方便对照代码维护。
+This is the authoritative index of every id (i18n.tr falls back here when
+the current language is missing an id), so every id must appear in this
+table. Grouped by source file for easier maintenance.
 """
 
 TRANSLATIONS = {

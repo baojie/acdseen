@@ -1,4 +1,4 @@
-"""中文翻译表：id → 中文。"""
+"""Chinese translation table: id → Chinese."""
 
 TRANSLATIONS = {
     # ------------------------------------------------------- config.py
