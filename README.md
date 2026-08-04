@@ -4,13 +4,25 @@
 
 没有数据库，没有编辑器，没有云。只求打开得快、翻页不卡、手不离键盘。
 
-## 关于「DOS 版 ACDSee」
+![浏览器窗口：左边目录树，左下预览窗格，右边缩略图网格](ref/screenshot-browser.png)
 
-ACDSee 从来不是 DOS 软件 —— 它 1994 年 11 月首发，是 Windows 3.1 的 16 位程序，
-1997 年才有 32 位的 "ACDSee 95"，3.0 要到 1999 年。DOS 下同气质的看图软件是
-CompuShow (CSHOW)、VPIC、SEA、Graphic Workshop 那一批。
+> 界面是**故意**做成这样的。灰底、立体边框、深蓝选中条、锯齿位图字体 ——
+> 这不是没做完，也不是懒得配主题，而是照着 1996 年那版一处一处对出来的。
+> 觉得扎眼的话，菜单「查看 → Windows 95 外观」可以关掉，换回系统原生样式。
 
-本项目复刻的是 **ACDSee 1.2x（1996）**。那个版本的定位非常清楚：
+## 为什么做这个
+
+一直找不到一个像 SEA 或者当年 ACDSee 那样好用的看图软件：简单、纯粹、快。
+
+三十年过去，所有看图软件里最好用的仍然是当年那个 ACDSee —— 连它自己今天那个臃肿的
+版本都不行。功能越堆越多，打开越来越慢，而我要的一直只是：**看图**。
+
+所以自己做一个，算是致敬。
+
+## 复刻的是哪一版
+
+ACDSee 1994 年首发，是 Windows 3.x 上的 16 位程序。本项目复刻的是
+**1.2x（1996）**。那个版本的定位非常清楚：
 **它不是图片管理器，也没有任何编辑功能**，只有一个 Browser 和一个 Viewer。
 
 | 原版 1.2x 有 | 本项目 |
@@ -45,6 +57,8 @@ CompuShow (CSHOW)、VPIC、SEA、Graphic Workshop 那一批。
 - [Pillow](https://pypi.org/project/Pillow/)（可选，仅用于 PCX/PCD/PSD 等 Qt 不认的老格式兜底）
 
 ```bash
+git clone https://github.com/baojie/acdseen.git
+cd acdseen
 ./setup.sh        # 一键创建虚拟环境并安装依赖
 ```
 
@@ -54,6 +68,15 @@ CompuShow (CSHOW)、VPIC、SEA、Graphic Workshop 那一批。
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
+
+也可以装成命令用（装完直接敲 `acdseen`）：
+
+```bash
+pip install .            # 加老格式兜底：pip install '.[legacy]'
+```
+
+平台：开发和日常使用都在 Linux 上。代码只有「在文件管理器中打开」一处用了
+`xdg-open`，其余全走 Qt，Windows / macOS 上应该能跑，但没有实测过。
 
 ## 使用
 
@@ -199,3 +222,12 @@ QSettings 都被重定向到临时目录，不会碰你的 `~/.cache` 和真实�
 | `test_多线程并发解码pcx不崩溃` | Pillow 插件 lazy-import 在多工作线程下撞崩 shiboken（进程级 fatal error） |
 | `test_缩略图确实生成且尺寸正确` | `QImage.scaled()` 传 int 而非 Qt 枚举，任务静默抛异常，缩略图全空 |
 | `test_pil兜底不经过ImageQt` | `PIL.ImageQt` 在工作线程碰 Qt binding 会炸，必须自己从原始字节构造 `QImage` |
+
+版本变更见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+## 说明
+
+本项目是照着记忆和截图重写的独立实现，不含原版任何代码或资源，与 ACD Systems
+及其 ACDSee 商标没有任何关系。名字里的 "N" 是 New，也是"这不是那个 ACDSee"的意思。
+
+许可证 [MIT](LICENSE)。
