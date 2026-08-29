@@ -84,6 +84,10 @@ deleted.
   in its own language.
 - **Commit messages are in English.** Explain why the change was made, not just
   what changed; wrap the body at roughly 78 columns.
+- **Daily logs in `logs/daily/<YYYY-MM>/<YYYY-MM-DD>.md` are in English too**,
+  headings included — they are project documentation, and the rule above
+  applies to them like to everything else committed here. A day runs 07:00 to
+  07:00, so a session that runs past midnight stays with the day it began.
 - Work directly on the current branch — no feature branches for new work.
 - Record changes in `CHANGELOG.md` (and `CHANGELOG.zh-CN.md`) under
   `[Unreleased]`, grouped by day, newest first.
