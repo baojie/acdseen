@@ -91,6 +91,17 @@ pip install .            # 加老格式兜底：pip install '.[legacy]'
 
 等价于 `python -m acdseen [参数]`。
 
+想要一个图标和启动器、而不是每次敲命令：
+
+```bash
+./install-desktop.sh          # 图标 + 应用程序菜单项
+./install-desktop.sh --dock   # 顺便钉到 GNOME dock 上
+./install-desktop.sh --uninstall
+```
+
+只往 `~/.local` 下写（`share/icons` 和 `share/applications`），不需要 root，
+也不碰 home 之外的任何地方。
+
 ## 支持的格式
 
 | 来源 | 格式 |
@@ -178,6 +189,7 @@ acdseen/
 ├── viewhost.py    └─ 浏览 ↔ 看图 的页面切换
 ├── theme.py       Windows 95 外观：调色板 + 样式表 + 自绘的树分支和箭头
 ├── preview.py     预览窗格：选中图片的大图预览，单线程解码 + 防抖重载
+├── appicon.py     应用图标：在 32x32 和 16x16 两套字符网格上点出来
 │
 ├── i18n.py        界面语言：tr(id) 查表、回退链、当前语言状态
 ├── lang_en.py     ├─ 英文表 —— 所有字符串 id 的权威清单

@@ -9,6 +9,27 @@ and versioning follows [Semantic Versioning](https://semver.org/).
 
 Recorded by day, newest first.
 
+### 2026-08-30 — An icon of its own
+
+#### Added
+
+- **Application icon** (`appicon.py`): a framed photo with a magnifier over
+  its lower-right corner, dotted out cell by cell on a character grid the same
+  way `theme.py` draws the folder and drive icons — black outline, flat Win95
+  fills, no gradients and no anti-aliasing
+  - Two grids, not one: 32x32 for everything the dock and the switcher show,
+    and a separate 16x16 cut whose magnifier is a 5x5 ring with the corners
+    knocked off. Shrinking the 32x32 art to 16 turns the lens into mud
+  - Larger sizes scale up by an integer factor with nearest-neighbor so the
+    pixels stay square; only sizes that are not a multiple of the grid (48 is
+    the common one) are resampled smoothly
+  - `main.py` sets it as the window icon and calls `setDesktopFileName()`, so
+    the desktop shell can tie a running window back to its launcher
+- **`install-desktop.sh`**: writes the icon into `~/.local/share/icons`, an
+  `acdseen.desktop` entry into `~/.local/share/applications`, and with
+  `--dock` pins it to the GNOME dock. `--uninstall` reverses all three.
+  Everything stays under `~/.local` — no root, nothing outside the home dir
+
 ### 2026-08-04 — Getting ready to publish
 
 #### Added

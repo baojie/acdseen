@@ -48,6 +48,12 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(config.APP_NAME)
     app.setOrganizationName(config.ORG_NAME)
     app.setApplicationDisplayName(config.APP_NAME)
+    # Must match the .desktop file's basename, or the desktop shell cannot tie
+    # the running window back to its launcher and falls back to a blank icon.
+    app.setDesktopFileName("acdseen")
+
+    from .appicon import app_icon
+    app.setWindowIcon(app_icon())
 
     from . import theme
     s = QSettings(config.ORG_NAME, config.APP_NAME)

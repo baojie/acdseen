@@ -113,6 +113,17 @@ macOS should work, but neither has been tested.
 
 Equivalent to `python -m acdseen [args]`.
 
+To get a launcher and an icon instead of a terminal command:
+
+```bash
+./install-desktop.sh          # icon + application menu entry
+./install-desktop.sh --dock   # and pin it to the GNOME dock
+./install-desktop.sh --uninstall
+```
+
+It writes only under `~/.local` (`share/icons` and `share/applications`), so it
+needs no root and touches nothing outside your home directory.
+
 ## Supported formats
 
 | Source | Formats |
@@ -215,6 +226,7 @@ acdseen/
 ├── viewhost.py    └─ page switching between browsing and viewing
 ├── theme.py       Windows 95 look: palette + stylesheet + hand-drawn tree branches and arrows
 ├── preview.py     preview pane: large preview of the selection, single-thread decode, debounced reload
+├── appicon.py     the application icon, dotted out on a 32x32 and a 16x16 character grid
 │
 ├── i18n.py        UI language: tr(id) lookup, fallback chain, current-language state
 ├── lang_en.py     ├─ English table — the authoritative list of string ids
